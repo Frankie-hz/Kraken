@@ -3,10 +3,10 @@ use std::{
     fs::File,
     path::PathBuf,
     str::FromStr,
-    sync::{Arc, mpsc},
+    sync::{mpsc, Arc},
 };
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
 use dats::context::{DatContext, ZoneName};
 use processor::processor::{DatProcessingState, DatProcessor};
@@ -30,7 +30,7 @@ enum Commands {
 fn attach_console() {
     #[cfg(windows)]
     {
-        use windows::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole};
+        use windows::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
         let _ = unsafe { AttachConsole(ATTACH_PARENT_PROCESS) };
     }
 }

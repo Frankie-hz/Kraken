@@ -17,8 +17,8 @@ use crate::errors::AppError;
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, specta::Type,
 )]
 pub struct DatDescriptorInfo {
-    descriptor: DatDescriptor,
-    has_jp: bool,
+    pub descriptor: DatDescriptor,
+    pub has_jp: bool,
 }
 
 const fn to_info(descriptor: DatDescriptor) -> DatDescriptorInfo {

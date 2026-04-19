@@ -3,7 +3,7 @@ use std::path::Path;
 use std::{path::PathBuf, sync::Arc};
 
 use anyhow::Result;
-use dats::base::{DatId, DatPath};
+use dats::base::{Dat, DatId, DatPath};
 use dats::context::DatContext;
 
 use dats::dat_format::DatFormat;
@@ -59,37 +59,91 @@ pub fn export_dat(
     });
 
     println!("Writing exported DAT to: {}", out_path.display());
-    try_decode(&dat_path, out_path)?;
+    try_decode(&dat_path, out_path, dat_context.as_ref())?;
 
     Ok(())
 }
 
-macro_rules! try_decoding_with_formats {
-    ($path_var:expr, $out_path_var:expr, $($format_type:ident),+,) => {
-        $(
-            if let Ok(data) = $format_type::from_path(&$path_var) {
-                let _ = std::fs::create_dir_all(&$out_path_var.parent().unwrap());
-                let file = std::fs::File::create(&$out_path_var).unwrap();
-                serde_yaml::to_writer(BufWriter::new(file), &data)?;
-                return Ok(());
-            }
-        )*
-    };
-}
+fn try_decode(
+    dat_path: &PathBuf,
+    out_path: PathBuf,
+    dat_context: &DatContext,
+) -> anyhow::Result<()> {
+    if let Ok(data) = DmsgTable::from_path(dat_path) {
+        let _ = std::fs::create_dir_all(&out_path.parent().unwrap());
+        let file = std::fs::File::create(&out_path).unwrap();
+        serde_yaml::to_writer(BufWriter::new(file), &data)?;
+        return Ok(());
+    }
 
-fn try_decode(dat_path: &PathBuf, out_path: PathBuf) -> anyhow::Result<()> {
-    try_decoding_with_formats!(
-        dat_path,
-        out_path,
-        DmsgTable,
-        Dialog,
-        EntityNames,
-        Events,
-        ItemInfoTable,
-        MenuTable,
-        StatusInfoTable,
-        XiStringTable,
-    );
+    if let Ok(data) = Dialog::from_path(dat_path) {
+        let _ = std::fs::create_dir_all(&out_path.parent().unwrap());
+        let file = std::fs::File::create(&out_path).unwrap();
+        serde_yaml::to_writer(BufWriter::new(file), &data)?;
+        return Ok(());
+    }
+
+    if let Ok(data) = EntityNames::from_path(dat_path) {
+        let _ = std::fs::create_dir_all(&out_path.parent().unwrap());
+        let file = std::fs::File::create(&out_path).unwrap();
+        serde_yaml::to_writer(BufWriter::new(file), &data)?;
+        return Ok(());
+    }
+
+    if let Ok(data) = Events::from_path(dat_path) {
+        let _ = std::fs::create_dir_all(&out_path.parent().unwrap());
+        let file = std::fs::File::create(&out_path).unwrap();
+        serde_yaml::to_writer(BufWriter::new(file), &data)?;
+        return Ok(());
+    }
+
+    if let Ok(data) = ItemInfoTable::from_path(dat_path) {
+        let _ = std::fs::create_dir_all(&out_path.parent().unwrap());
+        let file = std::fs::File::create(&out_path).unwrap();
+        serde_yaml::to_writer(BufWriter::new(file), &data)?;
+        return Ok(());
+    }
+
+    if let Ok(mut data) = MenuTable::from_path(dat_path) {
+        let is_data_menu = DatPath::from_path(dat_path)
+            .ok()
+            .and_then(|path| dat_context.get_dat_id(path))
+            .map(|id| id.get_inner() == 81)
+            .unwrap_or(false);
+
+        if is_data_menu {
+            let spell_names = dat_context
+                .get_data_from_dat(&Dat::<DmsgTable>::from(55702u32))
+                .ok();
+            let ability_names = dat_context
+                .get_data_from_dat(&Dat::<DmsgTable>::from(55701u32))
+                .ok();
+
+            data.resolve_names(
+                spell_names.as_ref().map(|lookup| &lookup.dat),
+                ability_names.as_ref().map(|lookup| &lookup.dat),
+            );
+        }
+
+        let _ = std::fs::create_dir_all(&out_path.parent().unwrap());
+        let file = std::fs::File::create(&out_path).unwrap();
+        serde_yaml::to_writer(BufWriter::new(file), &data)?;
+        return Ok(());
+    }
+
+    if let Ok(data) = StatusInfoTable::from_path(dat_path) {
+        let _ = std::fs::create_dir_all(&out_path.parent().unwrap());
+        let file = std::fs::File::create(&out_path).unwrap();
+        serde_yaml::to_writer(BufWriter::new(file), &data)?;
+        return Ok(());
+    }
+
+    if let Ok(data) = XiStringTable::from_path(dat_path) {
+        let _ = std::fs::create_dir_all(&out_path.parent().unwrap());
+        let file = std::fs::File::create(&out_path).unwrap();
+        serde_yaml::to_writer(BufWriter::new(file), &data)?;
+        return Ok(());
+    }
 
     eprintln!("Failed to find a suitable DAT format.");
     Ok(())

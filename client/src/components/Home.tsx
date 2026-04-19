@@ -1,5 +1,6 @@
 import ProjectSelect from "./ProjectSelect";
 import FFXISelect from "./FFXISelect";
+import CustomDatRootSelect from "./CustomDatRootSelect";
 import { commands } from "../bindings";
 import { useData } from "../store";
 import { unwrap } from "../util";
@@ -16,6 +17,8 @@ function Home() {
       <FFXISelect />
       <hr />
       <ProjectSelect />
+      <hr />
+      <CustomDatRootSelect />
       <hr />
       <div class="flex flex-row space-x-2">
         <button

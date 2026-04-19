@@ -1,4 +1,5 @@
 mod analyze_meshes;
+mod entity_names_merge;
 mod export_dat;
 mod export_ximesh;
 mod make_dats;
@@ -12,6 +13,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 use dats::base::DatId;
+use entity_names_merge::migrate_entity_names;
 use export_ximesh::export_zone_meshes;
 use make_dats::make_dats;
 
@@ -68,6 +70,26 @@ enum Commands {
         #[arg(value_name = "OUT_PATH")]
         out_path: Option<PathBuf>,
     },
+
+    MigrateEntityNames {
+        #[arg(value_name = "EDITED_YAML_OR_DAT")]
+        edited_yaml: PathBuf,
+
+        #[arg(value_name = "RETAIL_YAML_OR_DAT")]
+        retail_yaml: PathBuf,
+
+        #[arg(value_name = "NEW_YAML")]
+        new_yaml: PathBuf,
+
+        #[arg(long, value_name = "BASELINE_RETAIL_YAML_OR_DAT")]
+        baseline_retail: Option<PathBuf>,
+
+        #[arg(long, value_name = "OUT_DAT")]
+        out_dat: Option<PathBuf>,
+
+        #[arg(long, value_name = "REPORT_YAML")]
+        report: Option<PathBuf>,
+    },
 }
 
 #[tokio::main]
@@ -102,6 +124,23 @@ async fn main() -> Result<()> {
             out_path,
         } => {
             export_dat(ffxi_path, dat_path, dat_id.map(DatId::from), out_path)?;
+        }
+        Commands::MigrateEntityNames {
+            edited_yaml,
+            retail_yaml,
+            new_yaml,
+            baseline_retail,
+            out_dat,
+            report,
+        } => {
+            migrate_entity_names(
+                edited_yaml,
+                retail_yaml,
+                baseline_retail,
+                Some(new_yaml),
+                report,
+                out_dat,
+            )?;
         }
     }
 

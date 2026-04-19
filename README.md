@@ -1,44 +1,33 @@
-# XI Tinkerer
+# Kraken
 
-Tool for decoding and encoding FFXI DAT files.
+Kraken is a tool for directly editing **FFXI DAT files**.
 
-It can export DATs into human-readable files (YAML), which can then be edited and re-encoded into DAT files.
-One DAT file is converted 1:1 with exactly one editable file.
+It is built on top of the work originally done in **XI Tinkerer**, but the goal of Kraken is not just to export and re-encode DATs. Instead, Kraken is focused on making DAT editing more practical through a dedicated interface, editing tools, workflow improvements, and expanded tooling around DAT manipulation.
 
-Currently, it only supports conversion of the English DATs, but the plan is to eventually support the other languages as well, once the conversion tables and unique control-structures for those are figured out. See plans for future work below.
+Under the hood, Kraken still relies on structured parsing and data conversion to safely read and write DAT content, but the intended experience is direct editing rather than a manual export/import workflow.
 
-## Planned Work
+## Origin
 
-It is planned to eventually support handling of most DAT-related things, like:
+Kraken began as a fork of **XI Tinkerer**.
 
-- [ ] All languages:
-    - [x] English text in DATs
-    - [ ] Japanese text in DATs
-    - [ ] French text in DATs
-    - [ ] German text in DATs
-- [ ] All DAT formats (non-exhaustive list):
-    - [x] Dialog
-    - [x] Entity names
-    - [x] Status info
-    - [ ] Item info (most are supported)
-    - [ ] d_msg (most are supported)
-    - [ ] XISTRING (partially done)
-    - [ ] Spell info
-    - [ ] Ability info
-    - [ ] Quest info
-    - [x] Events/cutscenes (byte code and data)
-- [ ] GUI editor for complex DATs, i.e.:
-    - [ ] Items
-    - [ ] DATs with images
-    - [ ] Events/cutscenes joined with the used dialog text strings and entities
+This project is based on the original XI Tinkerer codebase and remains open source under the **GNU Affero General Public License v3.0 (AGPL-3.0)**. Original credits and third-party attributions are preserved below.
 
-### Breaking changes
+Kraken includes additional modifications and features beyond the original project, including editing tools, sidebar improvements, UI changes, and ongoing workflow enhancements.
 
-There will most likely be breaking changes as new versions of this tool gets updated, since various fields can be added/removed/renamed.
+> Modified from the original XI Tinkerer project. Rebranded and extended as Kraken. Initial Kraken fork/modifications: [4/20/26]
 
-For example, there are currently still unknown fields included in the human-readable files. These fields are necessary data for it to properly generate usable DAT files again, so they have to be included. As understanding of the DAT files progresses, and the meaning of these fields are determined, the field names/content will be changed/renamed. This will currently cause the tool to not be backwards-compatible with the previous versions of human-readable files (since their fields/formats have changed), in which case they will have to re-exported from DATs to be able to generate DATs again.
+## Goals
 
+Kraken is intended to make DAT editing more accessible and more efficient by reducing the amount of manual conversion work needed from the user.
 
+Current and planned goals include:
+
+- Direct editing workflows for supported DAT structures
+- Improved UI and navigation for working with DAT content
+- Expanded editing tools and utilities
+- More practical workflows for modifying DAT files
+- Continued support for structured parsing and regeneration of DAT data
+- Long-term expansion into more DAT formats, languages, and editing features
 
 ## Development setup
 
@@ -65,9 +54,9 @@ Once they're installed, you can develop the frontend application using the follo
 pnpm tauri dev
 ```
 
-
-
 ## Credits
+
+Kraken is based on **XI Tinkerer**. Credit goes to the original author(s) and contributors of that project for the foundation this fork builds on.
 
 The starting point for the binary structure of some of the DAT formats, which are used in this project,
 were partially derived from the [POLUtils project](https://github.com/Windower/POLUtils) code,
@@ -84,3 +73,9 @@ The full license file and copyright text have been included in the folder that t
 ### Events
 
 Decoding of events and the byte code is done based on [XiEvents](https://github.com/atom0s/XiEvents) by atom0s. The license associated with the repository [can be found here](https://github.com/atom0s/XiEvents/blob/main/LICENSE.md), which is currently AGPL.
+
+### Attribution Notes
+
+Kraken is a modified fork and is not the original XI Tinkerer project.
+
+Please preserve original license notices, copyright notices, and third-party attributions when redistributing or modifying this project.

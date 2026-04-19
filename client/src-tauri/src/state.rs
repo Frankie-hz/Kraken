@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     ffi::OsStr,
     path::PathBuf,
-    sync::{Arc, mpsc},
+    sync::{mpsc, Arc},
     thread,
 };
 
@@ -15,9 +15,9 @@ use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use parking_lot::RwLock;
 use processor::{dat_yaml_util::DatYamlUtil, processor::DatProcessor};
 use serde::Serialize;
-use tauri::{App, AppHandle, Emitter, Manager, async_runtime};
+use tauri::{async_runtime, App, AppHandle, Emitter, Manager};
 
-use crate::{RAW_DATA_DIR, app_persistence::PersistenceData, errors::AppError};
+use crate::{app_persistence::PersistenceData, errors::AppError, RAW_DATA_DIR};
 
 #[derive(Debug)]
 pub struct AppStateData {
@@ -99,6 +99,15 @@ impl AppStateData {
         self.persistence.save(&self.local_data_dir);
 
         Ok(new_ffxi_path)
+    }
+
+    pub fn set_local_edit_path(
+        &mut self,
+        local_edit_path: Option<PathBuf>,
+    ) -> Result<Option<PathBuf>, AppError> {
+        self.persistence.local_edit_path = local_edit_path.clone();
+        self.persistence.save(&self.local_data_dir);
+        Ok(local_edit_path)
     }
 
     pub fn set_project_path(

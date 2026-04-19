@@ -42,6 +42,23 @@ export function createFoldersStore() {
     string[]
   >([]);
 
+  // Local edit folder
+  const [getLocalEditFolder, setLocalEditFolderLocal] = createSignal<
+    string | null
+  >();
+
+  const setLocalEditFolder = async (path: string | null) => {
+    return commands.selectLocalEditFolder(path)
+      .then((newPath) => {
+        setLocalEditFolderLocal(unwrap(newPath));
+      })
+      .catch((err) => {
+        message(err);
+        setLocalEditFolderLocal(null);
+        console.error(err);
+      });
+  };
+
   // Load data
   const [appPersistence] = createResource(async () => unwrap(await commands.loadPersistenceData()));
 
@@ -49,6 +66,7 @@ export function createFoldersStore() {
     setProjectFolderLocal(appPersistence()?.recent_projects[0]);
     setRecentProjectFolders(appPersistence()?.recent_projects ?? []);
     setDatFolderLocal(appPersistence()?.ffxi_path);
+    setLocalEditFolderLocal(appPersistence()?.local_edit_path ?? null);
   });
 
   const promptDatFolder = () => {
@@ -57,6 +75,10 @@ export function createFoldersStore() {
 
   const promptProjectFolder = () => {
     promptFolder(setProjectFolder, getProjectFolder());
+  };
+
+  const promptLocalEditFolder = () => {
+    promptFolder(setLocalEditFolder, getLocalEditFolder());
   };
 
   return {
@@ -69,5 +91,9 @@ export function createFoldersStore() {
     promptProjectFolder,
 
     getRecentProjectFolders,
+
+    getLocalEditFolder,
+    setLocalEditFolder,
+    promptLocalEditFolder,
   };
 }

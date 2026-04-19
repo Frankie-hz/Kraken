@@ -6,6 +6,7 @@ use specta::Type;
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct PersistenceData {
     pub ffxi_path: Option<PathBuf>,
+    pub local_edit_path: Option<PathBuf>,
     pub recent_projects: Vec<PathBuf>,
 }
 
@@ -36,6 +37,7 @@ impl Default for PersistenceData {
     fn default() -> Self {
         Self {
             ffxi_path: None,
+            local_edit_path: None,
             recent_projects: vec![],
         }
     }

@@ -9,6 +9,9 @@
     "main"
   ],
   "permissions": [
+    "dialog:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
     "updater:default",
     "window-state:default",
     "clipboard-manager:allow-write-text",

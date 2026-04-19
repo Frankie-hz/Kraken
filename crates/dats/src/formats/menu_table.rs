@@ -2,12 +2,13 @@ use std::collections::BTreeMap;
 
 use crate::{
     enums::{AreaShapeType, Element, JobEnum, MagicType, SkillType, SpellDistance},
+    formats::{dmsg_list::DmsgContent, dmsg_table::DmsgTable},
     serde_base64, serde_hex,
     utils::{
         decode_data_block_masked, decode_text_block, encode_data_block_masked, encode_text_block,
     },
 };
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use common::{
     byte_walker::{BufferedByteWalker, ByteWalker},
     expect, expect_msg, get_padding, get_padding_16,
@@ -188,6 +189,8 @@ impl Section {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AbilityInfo {
     id: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
     ability_type: AbilityType,
     icon_id: u8,
     mp_cost: u16,
@@ -213,6 +216,7 @@ impl SectionInfo for AbilityInfo {
 
         let info = AbilityInfo {
             id: data_walker.step::<u16>()?,
+            name: None,
             ability_type: AbilityType::from(data_walker.step::<u8>()?),
             icon_id: data_walker.step::<u8>()?,
             unknown1: data_walker.step::<u16>()?,
@@ -256,6 +260,8 @@ impl SectionInfo for AbilityInfo {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MagicInfo {
     index: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
     magic_type: MagicType,
     element: Element,
     valid_targets: ValidTargets,
@@ -289,6 +295,7 @@ impl SectionInfo for MagicInfo {
 
         let info = MagicInfo {
             index: data_walker.step::<u16>()?,
+            name: None,
             magic_type: MagicType::from(data_walker.step::<u16>()?),
             element: Element::try_from(data_walker.step::<u16>()?)?,
             valid_targets: ValidTargets::from_bits(data_walker.step::<u16>()?).unwrap_or_default(),
@@ -671,6 +678,41 @@ impl MenuTable {
         expect_msg(0, walker.remaining(), "End of sections")?;
 
         Ok(MenuTable { sections })
+    }
+
+    fn lookup_name(names_table: &DmsgTable, key: u32) -> Option<String> {
+        names_table.lists.get(&key).and_then(|list| {
+            list.content.iter().find_map(|entry| match entry {
+                DmsgContent::String { string } if !string.is_empty() => Some(string.clone()),
+                _ => None,
+            })
+        })
+    }
+
+    pub fn resolve_names(
+        &mut self,
+        spell_names: Option<&DmsgTable>,
+        ability_names: Option<&DmsgTable>,
+    ) {
+        for section in &mut self.sections {
+            match section {
+                Section::Mgc_(entries) => {
+                    for entry in entries {
+                        entry.name = spell_names.and_then(|table| {
+                            Self::lookup_name(table, entry.index as u32)
+                                .or_else(|| Self::lookup_name(table, entry.id as u32))
+                        });
+                    }
+                }
+                Section::Comm(entries) => {
+                    for entry in entries {
+                        entry.name = ability_names
+                            .and_then(|table| Self::lookup_name(table, entry.id as u32));
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 
     pub fn write<T: WritingByteWalker>(&self, walker: &mut T) -> Result<()> {

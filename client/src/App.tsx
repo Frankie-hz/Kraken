@@ -2,7 +2,19 @@ import Sidebar, { NavItem } from "./components/Sidebar";
 import Statusbar from "./components/Statusbar";
 import Home from "./components/Home";
 import { Routes, Route } from "@solidjs/router";
-import { HiSolidAdjustmentsHorizontal, HiSolidChatBubbleLeftRight, HiSolidCog8Tooth, HiSolidDocumentText, HiSolidMagnifyingGlass, HiSolidMap, HiSolidPencilSquare, HiSolidPlayCircle, HiSolidShoppingBag, HiSolidUser } from "solid-icons/hi";
+import {
+  HiSolidAdjustmentsHorizontal,
+  HiSolidArrowsRightLeft,
+  HiSolidChatBubbleLeftRight,
+  HiSolidCog8Tooth,
+  HiSolidDocumentText,
+  HiSolidMagnifyingGlass,
+  HiSolidMap,
+  HiSolidPencilSquare,
+  HiSolidPlayCircle,
+  HiSolidShoppingBag,
+  HiSolidUser,
+} from "solid-icons/hi";
 import DatTable from "./components/DatTable";
 import ZonesTable from "./components/ZonesTable";
 import Table from "./components/Table";
@@ -10,6 +22,17 @@ import ZoneData from "./components/ZoneData";
 import { commands } from "./bindings";
 import Logs from "./components/Logs";
 import { unwrap } from "./util";
+import EntityDiffTool from "./components/EntityDiffTool";
+import FileDiffsTool from "./components/FileDiffsTool";
+import ItemDiffTool from "./components/ItemDiffTool";
+import SpellDiffTool from "./components/SpellDiffTool";
+
+function formatDatDescriptorType(type: string) {
+  if (type === "DataMenu") {
+    return "SpellData (DataMenu)";
+  }
+  return type;
+}
 
 const navItems: NavItem[] = [
   {
@@ -17,9 +40,25 @@ const navItems: NavItem[] = [
     path: "/",
     icon: () => <HiSolidCog8Tooth />,
   },
+  { header: "Edit Tools" },
   {
-    name: "Browse",
-    path: "/browse",
+    name: "Entities",
+    path: "/entity-diff",
+    icon: () => <HiSolidArrowsRightLeft />,
+  },
+  {
+    name: "Items",
+    path: "/item-diff",
+    icon: () => <HiSolidArrowsRightLeft />,
+  },
+  {
+    name: "Spells/Abilities",
+    path: "/spell-diff",
+    icon: () => <HiSolidArrowsRightLeft />,
+  },
+  {
+    name: "File Diffs",
+    path: "/file-diffs",
     icon: () => <HiSolidMagnifyingGlass />,
   },
   { header: "Strings" },
@@ -43,7 +82,6 @@ const navItems: NavItem[] = [
     path: "/quests",
     icon: () => <HiSolidDocumentText />,
   },
-
   { header: "By zone" },
   {
     name: "Entity names",
@@ -70,7 +108,6 @@ const navItems: NavItem[] = [
     path: "/zones",
     icon: () => <HiSolidMap />,
   },
-
   { header: "Other" },
   {
     name: "Items",
@@ -82,7 +119,6 @@ const navItems: NavItem[] = [
     path: "/misc",
     icon: () => <HiSolidAdjustmentsHorizontal />,
   },
-
 ];
 
 function App() {
@@ -140,7 +176,7 @@ function App() {
                   <DatTable
                     title="Misc."
                     rowsResourceFetcher={async () => unwrap(await commands.getMiscDats())}
-                    columns={[{ name: "Name", getter: (v) => v.descriptor.type }]}
+                    columns={[{ name: "Name", getter: (v) => formatDatDescriptorType(v.descriptor.type) }]}
                     toDatDescriptor={(v) => v.descriptor}
                   />
                 )}
@@ -247,6 +283,26 @@ function App() {
               <Route
                 path="/logs"
                 component={Logs}
+              ></Route>
+
+              <Route
+                path="/entity-diff"
+                component={EntityDiffTool}
+              ></Route>
+
+              <Route
+                path="/file-diffs"
+                component={FileDiffsTool}
+              ></Route>
+
+              <Route
+                path="/item-diff"
+                component={ItemDiffTool}
+              ></Route>
+
+              <Route
+                path="/spell-diff"
+                component={SpellDiffTool}
               ></Route>
             </Routes>
           </div>

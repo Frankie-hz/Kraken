@@ -29,6 +29,14 @@ async selectProjectFolder(path: string | null) : Promise<Result<string[], any>> 
     else return { status: "error", error: e  as any };
 }
 },
+async selectLocalEditFolder(path: string | null) : Promise<Result<string | null, any>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("select_local_edit_folder", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async loadPersistenceData() : Promise<Result<PersistenceData, any>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("load_persistence_data") };
@@ -186,7 +194,7 @@ export type DatProcessorMessage = { dat_descriptor: DatDescriptor; output_kind: 
 export type DatProcessorOutputKind = "Dat" | "Yaml" | "Wavefront"
 export type DatWithLang = { descriptor: DatDescriptor; lang: DatLanguage }
 export type FileNotification = { dat: DatWithLang; is_delete: boolean }
-export type PersistenceData = { ffxi_path: string | null; recent_projects: string[] }
+export type PersistenceData = { ffxi_path: string | null; local_edit_path: string | null; recent_projects: string[] }
 export type TriangleMetadata = { grid_entry_idx: number; mesh_entry_idx: number; material: number; is_invalid_triangle: boolean; is_barrier: boolean; o2w: [([number, number, number]), ([number, number, number]), ([number, number, number]), ([number, number, number])]; o2w_opts: [([number, number]), ([number, number]), ([number, number]), ([number, number])]; w2o: [([number, number, number]), ([number, number, number]), ([number, number, number]), ([number, number, number])]; w2o_opts: [([number, number]), ([number, number]), ([number, number]), ([number, number])]; unk_floats: [number, number, number, number, number, number, number, number, number]; data_field_1: number; data_field_2: number; unk_bytes: [number, number, number, number]; unk_1: number; min_y: number; max_y: number; unk_2: number; map_id: number; block_flags: number }
 export type ZoneInfo = { id: number; name: string; dat_path: string }
 export type ZoneWavefrontKind = "Collision" | "Model"

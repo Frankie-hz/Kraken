@@ -5,6 +5,7 @@ mod app_persistence;
 mod cli;
 mod commands;
 mod dat_query;
+mod entity_diff;
 mod errors;
 mod state;
 
@@ -36,6 +37,7 @@ fn main() {
             commands::dummy_event_type_gen,
             commands::select_ffxi_folder,
             commands::select_project_folder,
+            commands::select_local_edit_folder,
             commands::load_persistence_data,
             commands::get_misc_dats,
             commands::get_standalone_string_dats,
@@ -72,6 +74,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::select_ffxi_folder,
             commands::select_project_folder,
+            commands::select_local_edit_folder,
             commands::load_persistence_data,
             commands::browse_dats,
             commands::get_zones_for_type,
@@ -90,6 +93,13 @@ fn main() {
             commands::make_dat,
             commands::make_yaml,
             commands::copy_lookup_tables,
+            commands::compare_entity_name_files,
+            commands::compare_item_files,
+            commands::compare_spell_files,
+            commands::save_entity_name_diff,
+            commands::save_item_diff,
+            commands::save_spell_diff,
+            commands::compare_entity_name_folders,
         ])
         .setup(|app| {
             let app_state = RwLock::new(AppStateData::new(app));

@@ -1,25 +1,32 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap, HashSet},
     fs::{self, File},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
-use anyhow::{Result, anyhow};
-use dats::base::ZoneId;
-use dats::id_mapping::{DatDescriptor, DatLanguage, DatWithLang};
+use anyhow::{anyhow, Result};
+use dats::base::{Dat, DatId, ZoneId};
+use dats::context::DatContext;
+use dats::dat_format::DatFormat;
+use dats::id_mapping::{DatDescriptor, DatLanguage, DatUsage, DatWithLang};
 use processor::{
     dat_yaml_util::DatYamlUtil,
     processor::{DatProcessorMessage, ZoneWavefrontKind},
     ximesh::get_ximesh_bytes,
 };
+use serde::Serialize;
 use tracing_subscriber::fmt::MakeWriter;
 
 use crate::{
-    DAT_GENERATION_DIR, LOOKUP_TABLE_DIR, RAW_DATA_DIR, ZONE_MAPPING_FILE,
     app_persistence::PersistenceData,
     dat_query::{self, BrowseInfo, DatDescriptorInfo, TriangleMetadata, ZoneInfo},
+    entity_diff::{
+        self, DiffToolKind, EntityDiffResult, EntityDiffRow, EntityDiffSaveResult,
+        FolderDiffResult, SpellDiffResult, SpellDiffRow,
+    },
     errors::AppError,
     state::{AppState, FileNotification},
+    DAT_GENERATION_DIR, LOOKUP_TABLE_DIR, RAW_DATA_DIR, ZONE_MAPPING_FILE,
 };
 use tauri::ipc::Response;
 
@@ -39,6 +46,15 @@ pub async fn select_project_folder<'a>(
     state: AppState<'a>,
 ) -> Result<Vec<PathBuf>, AppError> {
     state.write().set_project_path(path)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn select_local_edit_folder<'a>(
+    path: Option<PathBuf>,
+    state: AppState<'a>,
+) -> Result<Option<PathBuf>, AppError> {
+    state.write().set_local_edit_path(path)
 }
 
 #[tauri::command]
@@ -460,6 +476,222 @@ pub async fn copy_lookup_tables(state: AppState<'_>) -> Result<(), AppError> {
         .map_err(|err| anyhow!("Unable to write zone mapping file: {}", err))?;
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn compare_entity_name_files(
+    old_path: PathBuf,
+    new_path: PathBuf,
+) -> Result<EntityDiffResult, AppError> {
+    Ok(entity_diff::compare_entity_name_files(old_path, new_path)?)
+}
+
+#[tauri::command]
+pub async fn compare_item_files(
+    old_path: PathBuf,
+    new_path: PathBuf,
+) -> Result<EntityDiffResult, AppError> {
+    Ok(entity_diff::compare_item_files(old_path, new_path)?)
+}
+
+#[tauri::command]
+pub async fn compare_spell_files(
+    old_path: PathBuf,
+    new_path: PathBuf,
+) -> Result<SpellDiffResult, AppError> {
+    Ok(entity_diff::compare_spell_files(old_path, new_path)?)
+}
+
+#[tauri::command]
+pub async fn save_entity_name_diff(
+    rows: Vec<EntityDiffRow>,
+    out_yaml_path: PathBuf,
+    out_dat_path: Option<PathBuf>,
+) -> Result<EntityDiffSaveResult, AppError> {
+    Ok(entity_diff::save_entity_name_diff(
+        rows,
+        out_yaml_path,
+        out_dat_path,
+    )?)
+}
+
+#[tauri::command]
+pub async fn save_item_diff(
+    old_path: PathBuf,
+    new_path: PathBuf,
+    rows: Vec<EntityDiffRow>,
+    out_yaml_path: PathBuf,
+    out_dat_path: Option<PathBuf>,
+) -> Result<EntityDiffSaveResult, AppError> {
+    Ok(entity_diff::save_item_diff(
+        old_path,
+        new_path,
+        rows,
+        out_yaml_path,
+        out_dat_path,
+    )?)
+}
+
+#[tauri::command]
+pub async fn save_spell_diff(
+    old_path: PathBuf,
+    new_path: PathBuf,
+    rows: Vec<SpellDiffRow>,
+    out_yaml_path: PathBuf,
+    out_dat_path: Option<PathBuf>,
+) -> Result<EntityDiffSaveResult, AppError> {
+    Ok(entity_diff::save_spell_diff(
+        old_path,
+        new_path,
+        rows,
+        out_yaml_path,
+        out_dat_path,
+    )?)
+}
+
+#[tauri::command]
+pub async fn compare_entity_name_folders(
+    custom_dir: PathBuf,
+    old_retail_dir: PathBuf,
+    new_retail_dir: PathBuf,
+    state: AppState<'_>,
+) -> Result<FolderDiffResult, AppError> {
+    let mut result =
+        entity_diff::compare_entity_name_folders(custom_dir, old_retail_dir, new_retail_dir)?;
+
+    let dat_context = { state.read().dat_context.clone() };
+
+    if let Some(dat_context) = dat_context {
+        let mut name_by_path: HashMap<String, String> = HashMap::new();
+        let mut zone_path_keys: HashSet<String> = HashSet::new();
+
+        let mut append_zone_infos = |zone_infos: Vec<ZoneInfo>| {
+            for zone_info in zone_infos {
+                let key = normalize_compare_key_from_str(&zone_info.dat_path);
+                zone_path_keys.insert(key.clone());
+                name_by_path.insert(key, zone_info.name);
+            }
+        };
+
+        append_zone_infos(
+            dat_query::get_zone_infos_for_type(DatDescriptor::EntityNames(0), dat_context.clone())
+                .await,
+        );
+        append_zone_infos(
+            dat_query::get_zone_infos_for_type(DatDescriptor::ZoneData(0), dat_context.clone())
+                .await,
+        );
+        append_zone_infos(
+            dat_query::get_zone_infos_for_type(DatDescriptor::Dialog(0), dat_context.clone()).await,
+        );
+        append_zone_infos(
+            dat_query::get_zone_infos_for_type(DatDescriptor::Dialog2(0), dat_context.clone())
+                .await,
+        );
+        append_zone_infos(
+            dat_query::get_zone_infos_for_type(DatDescriptor::Events(0), dat_context.clone()).await,
+        );
+
+        for descriptors in [
+            dat_query::MISC_DATS,
+            dat_query::STANDALONE_DATS,
+            dat_query::MISSION_DATS,
+            dat_query::QUEST_DATS,
+            dat_query::ITEM_DATS,
+            dat_query::GLOBAL_DIALOG_DATS,
+        ] {
+            merge_descriptor_names(&mut name_by_path, descriptors, dat_context.as_ref());
+        }
+
+        let annotate_entry = |entry: &mut entity_diff::FolderDiffEntry| {
+            let key = normalize_compare_key_from_str(&entry.relative_path);
+            entry.zone_name = name_by_path.get(&key).cloned();
+            entry.diff_tool = if zone_path_keys.contains(&key) {
+                DiffToolKind::Entity
+            } else {
+                DiffToolKind::Item
+            };
+        };
+
+        for entry in &mut result.changed_files {
+            annotate_entry(entry);
+        }
+        for entry in &mut result.all_files {
+            annotate_entry(entry);
+        }
+    }
+
+    Ok(result)
+}
+
+fn normalize_compare_key_from_str(path_like: &str) -> String {
+    let components = Path::new(path_like)
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+
+    let rom_start = components.iter().position(|component| {
+        let upper = component.to_ascii_uppercase();
+        upper == "ROM"
+            || (upper.starts_with("ROM")
+                && upper
+                    .chars()
+                    .skip(3)
+                    .all(|character| character.is_ascii_digit()))
+    });
+
+    let normalized = if let Some(start) = rom_start {
+        components[start..].join("/")
+    } else {
+        components.join("/")
+    };
+
+    normalized.to_ascii_lowercase()
+}
+
+fn merge_descriptor_names(
+    names_by_path: &mut HashMap<String, String>,
+    descriptors: &[DatDescriptorInfo],
+    dat_context: &DatContext,
+) {
+    for descriptor_info in descriptors {
+        let descriptor = descriptor_info.descriptor;
+        let Ok(dat_path) = descriptor.use_dat_with(RelativeDatPathResolver { dat_context }) else {
+            continue;
+        };
+
+        let Some(name) = descriptor_type_name(descriptor) else {
+            continue;
+        };
+
+        names_by_path.insert(normalize_compare_key_from_str(&dat_path), name);
+    }
+}
+
+fn descriptor_type_name(descriptor: DatDescriptor) -> Option<String> {
+    let value = serde_json::to_value(descriptor).ok()?;
+    value
+        .get("type")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
+#[derive(Clone, Copy)]
+struct RelativeDatPathResolver<'a> {
+    dat_context: &'a DatContext,
+}
+
+impl<'a> DatUsage<String> for RelativeDatPathResolver<'a> {
+    fn use_dat<T: DatFormat + Serialize + for<'de> serde::Deserialize<'de>>(
+        self,
+        dat: Dat<T>,
+    ) -> Result<String> {
+        let dat_id = DatId::from(dat);
+        Ok(dat_id
+            .get_relative_dat_path(self.dat_context)?
+            .to_string_lossy()
+            .into_owned())
+    }
 }
 
 // Dummy command just to create types for events

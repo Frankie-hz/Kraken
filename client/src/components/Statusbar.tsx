@@ -20,16 +20,12 @@ function Statusbar() {
   } = useData();
 
   return (
-    <footer class="flex bg-slate-900 border-t border-t-slate-400 text-slate-100 justify-start p-1 text-sm">
-      <div class="flex w-full h-full items-center">
-        <div
-          class="items-center grid"
-          style={"grid-template-columns: max-content max-content; height: min-content"}
-        >
-          <div class="px-1 text-right whitespace-nowrap">Project:</div>
-
+    <footer class="statusbar-shell">
+      <div class="statusbar-grid">
+        <div class="statusbar-item">
+          <span class="statusbar-label">Project</span>
           <div
-            class="cursor-pointer"
+            class="statusbar-path"
             onclick={(e) => {
               if (e.ctrlKey) {
                 setProjectFolder(null);
@@ -38,17 +34,14 @@ function Statusbar() {
               }
             }}
           >
-            {getProjectFolder() ? (
-              <div class="text-green-200">{getProjectFolder()}</div>
-            ) : (
-              <div class="underline text-red-200">
-                None. Click to select one.
-              </div>
-            )}
+            {getProjectFolder() ?? "No project folder selected. Click to choose one."}
           </div>
-          <div class="px-1 text-right whitespace-nowrap">FFXI:</div>
+        </div>
+
+        <div class="statusbar-item">
+          <span class="statusbar-label">FFXI Source</span>
           <div
-            class="cursor-pointer"
+            class="statusbar-path"
             onclick={(e) => {
               if (e.ctrlKey) {
                 setDatFolder(null);
@@ -57,19 +50,14 @@ function Statusbar() {
               }
             }}
           >
-            {getDatFolder() ? (
-              <div class="text-green-200">{getDatFolder()}</div>
-            ) : (
-              <div class="underline text-red-200">
-                None. Click here to select.
-              </div>
-            )}
+            {getDatFolder() ?? "No FFXI folder selected. Click to choose one."}
           </div>
-          <div class="px-1 text-right whitespace-nowrap" title={CUSTOM_DAT_ROOT_HELP}>
-            Custom DAT Root:
-          </div>
+        </div>
+
+        <div class="statusbar-item" title={CUSTOM_DAT_ROOT_HELP}>
+          <span class="statusbar-label">Custom DAT Root</span>
           <div
-            class="cursor-pointer"
+            class="statusbar-path"
             title={CUSTOM_DAT_ROOT_HELP}
             onclick={(e) => {
               if (e.ctrlKey) {
@@ -79,16 +67,13 @@ function Statusbar() {
               }
             }}
           >
-            {getLocalEditFolder() ? (
-              <div class="text-green-200">{getLocalEditFolder()}</div>
-            ) : (
-              <div class="underline text-red-200">
-                None. Click here to select.
-              </div>
-            )}
+            {getLocalEditFolder() ?? "Optional. Click to choose a DAT output root."}
           </div>
+          <div class="statusbar-note">Ctrl+click any path card here to clear it.</div>
         </div>
-        <div class="flex-grow"></div>
+      </div>
+
+      <div class="ml-auto">
         <Updater></Updater>
       </div>
     </footer>

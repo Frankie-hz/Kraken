@@ -2178,6 +2178,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "kraken"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "dats",
+ "futures",
+ "glob",
+ "notify",
+ "parking_lot",
+ "processor",
+ "project",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "specta",
+ "specta-typescript",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-dialog",
+ "tauri-plugin-updater",
+ "tauri-plugin-window-state",
+ "tauri-specta",
+ "thiserror 2.0.11",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "walkdir",
+ "windows 0.52.0",
+]
+
+[[package]]
 name = "kuchikiki"
 version = "0.8.8-speedreader"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4267,6 +4300,7 @@ dependencies = [
  "gtk",
  "heck 0.5.0",
  "http",
+ "image",
  "jni",
  "libc",
  "log",
@@ -6209,39 +6243,6 @@ dependencies = [
  "serde_yaml",
  "tokio",
  "walkdir",
-]
-
-[[package]]
-name = "xi_tinkerer"
-version = "0.12.0"
-dependencies = [
- "anyhow",
- "clap",
- "dats",
- "futures",
- "glob",
- "notify",
- "parking_lot",
- "processor",
- "project",
- "serde",
- "serde_json",
- "serde_yaml",
- "specta",
- "specta-typescript",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-dialog",
- "tauri-plugin-updater",
- "tauri-plugin-window-state",
- "tauri-specta",
- "thiserror 2.0.11",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "walkdir",
- "windows 0.52.0",
 ]
 
 [[package]]

@@ -1,7 +1,7 @@
 [package]
-name = "xi_tinkerer"
-version = "0.11.0"
-description = "XI Tinkerer"
+name = "kraken"
+version = "1.0.0"
+description = "Kraken"
 authors = ["InoUno"]
 license = "AGPL-3.0"
 repository = ""
@@ -13,7 +13,7 @@ edition = "2024"
 tauri-build = { version = "2.0.3", features = [] }
 
 [dependencies]
-tauri = { version = "2.1.1", features = [] }
+tauri = { version = "2.1.1", features = ["image-png"] }
 tauri-plugin-window-state = "2.2.0"
 tauri-plugin-dialog = "2.2.0"
 tauri-specta = { version = "2.0.0-rc.21", features = ["derive", "typescript"] }

@@ -59,12 +59,12 @@ function retailDiffPanelClass(changed: boolean) {
 
 function retailListValueClass(kind: "same" | "current-only" | "retail-only") {
   if (kind === "current-only") {
-    return "text-sm py-0.5 bg-amber-950/35 text-amber-200";
+    return "text-xs py-0.5 bg-amber-950/35 text-amber-200";
   }
   if (kind === "retail-only") {
-    return "text-sm py-0.5 bg-sky-950/35 text-sky-200";
+    return "text-xs py-0.5 bg-sky-950/35 text-sky-200";
   }
-  return "text-sm text-slate-100";
+  return "text-xs text-slate-100";
 }
 
 function defaultChoiceForRow(row: EntityDiffRow): EntityDiffChoice {
@@ -154,11 +154,11 @@ function buildAutoSavePaths(
   return { yamlPath, datPath };
 }
 
-const compactButtonBaseClass = "my-0 px-2 py-0.5 text-sm font-normal shadow-none border rounded-md";
+const compactButtonBaseClass = "my-0 px-1.5 py-0.5 text-xs font-normal shadow-none border rounded-md";
 const compactButtonIdleClass = "bg-slate-800 border-slate-500 text-slate-200";
 const compactButtonActiveClass = "bg-green-800 border-green-500 text-slate-100";
 const ITEM_DIFF_STATE_KEY = "xi_tinkerer_item_diff_state_v1";
-const ITEM_DIFF_COLUMN_COUNT = 4;
+const ITEM_DIFF_COLUMN_COUNT = 2;
 const VIRTUAL_ROW_HEIGHT_PX = 34;
 const VIRTUAL_OVERSCAN_ROWS = 16;
 const ITEM_FLAG_OPTIONS = [
@@ -1019,7 +1019,7 @@ function ItemDiffTool() {
                   pickerDefaultPath(editedPath(), getLocalEditFolder()),
                 )}
               >
-                Edited DAT/YAML
+                Current DAT/YAML
               </button>
               <span class="font-mono text-xs truncate" title={editedPath() || "Not selected"}>
                 {editedPath() || "Not selected"}
@@ -1034,7 +1034,7 @@ function ItemDiffTool() {
                   pickerDefaultPath(newRetailPath(), getDatFolder()),
                 )}
               >
-                New Retail DAT/YAML
+                Retail DAT/YAML
               </button>
               <span class="font-mono text-xs truncate" title={newRetailPath() || "Not selected"}>
                 {newRetailPath() || "Not selected"}
@@ -1083,7 +1083,7 @@ function ItemDiffTool() {
             </Show>
             <Show when={rows.length > 0}>
               <div class="text-slate-300">
-                Edited: {oldCount()} | Retail: {newCount()} | Changed: {changedCount()} | Keep OLD: {changedRowsSelectedOld()}
+                Current: {oldCount()} | Retail: {newCount()} | Changed: {changedCount()}
               </div>
             </Show>
           </div>
@@ -1092,15 +1092,15 @@ function ItemDiffTool() {
         <Show when={rows.length > 0}>
 
           <div class="rounded-md border border-rose-700/60 bg-rose-950/15 px-3 py-2">
-            <div class="text-xs font-semibold uppercase tracking-wide text-rose-200">Danger Zone</div>
+            <div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-rose-200">Danger Zone</div>
             <div class="text-xs text-rose-300">
               Bulk removals only affect the editable side. Nothing is written until you click Save merged.
             </div>
             <div class="mt-2 flex flex-wrap items-end gap-2">
               <div class="flex items-center gap-2">
-                <span class="text-xs text-rose-200 whitespace-nowrap">Remove Flag</span>
+                <span class="text-[11px] text-rose-200 whitespace-nowrap">Remove Flag</span>
                 <select
-                  class="m-0 min-w-[9rem] py-0 px-2 text-sm rounded-md bg-slate-800 border border-slate-500 focus:border-slate-300 focus:outline-none"
+                  class="m-0 min-w-[9rem] py-0 px-2 text-xs rounded-md bg-slate-800 border border-slate-500 focus:border-slate-300 focus:outline-none"
                   value={bulkFlagToRemove()}
                   onChange={(e) => setBulkFlagToRemove(e.currentTarget.value)}
                 >
@@ -1109,7 +1109,7 @@ function ItemDiffTool() {
                   </For>
                 </select>
                 <button
-                  class="my-0 px-2 py-0.5 text-sm font-normal rounded-md border border-rose-500 bg-rose-900 text-rose-100 hover:border-rose-300 disabled:text-slate-600 disabled:border-slate-600"
+                  class="my-0 px-1.5 py-0.5 text-xs font-normal rounded-md border border-rose-500 bg-rose-900 text-rose-100 hover:border-rose-300 disabled:text-slate-600 disabled:border-slate-600"
                   disabled={rows.length === 0}
                   onClick={removeFlagFromAllItems}
                 >
@@ -1118,9 +1118,9 @@ function ItemDiffTool() {
               </div>
 
               <div class="flex items-center gap-2">
-                <span class="text-xs text-rose-200 whitespace-nowrap">Remove Job</span>
+                <span class="text-[11px] text-rose-200 whitespace-nowrap">Remove Job</span>
                 <select
-                  class="m-0 min-w-[9rem] py-0 px-2 text-sm rounded-md bg-slate-800 border border-slate-500 focus:border-slate-300 focus:outline-none"
+                  class="m-0 min-w-[9rem] py-0 px-2 text-xs rounded-md bg-slate-800 border border-slate-500 focus:border-slate-300 focus:outline-none"
                   value={bulkJobToRemove()}
                   onChange={(e) => setBulkJobToRemove(e.currentTarget.value)}
                 >
@@ -1129,7 +1129,7 @@ function ItemDiffTool() {
                   </For>
                 </select>
                 <button
-                  class="my-0 px-2 py-0.5 text-sm font-normal rounded-md border border-rose-500 bg-rose-900 text-rose-100 hover:border-rose-300 disabled:text-slate-600 disabled:border-slate-600"
+                  class="my-0 px-1.5 py-0.5 text-xs font-normal rounded-md border border-rose-500 bg-rose-900 text-rose-100 hover:border-rose-300 disabled:text-slate-600 disabled:border-slate-600"
                   disabled={rows.length === 0}
                   onClick={removeJobFromAllItems}
                 >
@@ -1139,7 +1139,7 @@ function ItemDiffTool() {
             </div>
           </div>
 
-          <div class="grid grid-cols-1 xl:grid-cols-[minmax(300px,0.85fr)_minmax(520px,1.35fr)] gap-3">
+          <div class="grid grid-cols-1 xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] gap-3">
             <div
               class="max-h-[70vh] overflow-auto border border-slate-700 rounded-md"
               ref={(el) => {
@@ -1149,17 +1149,13 @@ function ItemDiffTool() {
             >
               <table class="w-full table-fixed">
                 <colgroup>
-                  <col class="w-[4.5rem]" />
-                  <col class="w-[7.5rem]" />
+                  <col class="w-[3.5rem]" />
                   <col />
-                  <col class="w-[6rem]" />
                 </colgroup>
                 <thead class="sticky top-0 z-10">
                   <tr>
-                    <th>Row</th>
-                    <th>Edited ID</th>
-                    <th>Edited Item Name</th>
-                    <th>Edit</th>
+                    <th>ID</th>
+                    <th>Item Name</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1175,14 +1171,8 @@ function ItemDiffTool() {
                         onMouseDown={() => selectRow(row.row)}
                         onClick={() => selectRow(row.row)}
                       >
-                        <td>{row.row}</td>
                         <td class="font-mono whitespace-nowrap tabular-nums overflow-visible">{row.old_id ?? "-"}</td>
-                        <td class="max-w-[18rem] truncate" title={row.old_name ?? "-"}>{row.old_name ?? "-"}</td>
-                        <td>
-                          <button class={compactButtonClass(selectedRowId() === row.row)} onClick={() => selectRow(row.row)}>
-                            Select
-                          </button>
-                        </td>
+                        <td class="truncate" title={row.old_name ?? "-"}>{row.old_name ?? "-"}</td>
                       </tr>
                     )}
                   </For>
@@ -1252,22 +1242,13 @@ function ItemDiffTool() {
 
                       <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm items-start">
                         <div class={retailDiffPanelClass(idDiffersFromRetail() || nameDiffersFromRetail() || stackDiffersFromRetail())}>
-                          <div class="mb-2 flex items-center justify-between">
-                            <div class="font-semibold text-slate-200">Edited</div>
-                            <button
-                              class={compactButtonClass(row.choice === "Old")}
-                              disabled={row.old_id === null || row.old_name === null}
-                              onClick={() => setRowChoice(rowId, "Old")}
-                            >
-                              Old
-                            </button>
-                          </div>
+                          <div class="mb-2 font-semibold text-slate-200">Current</div>
                           <div class="flex items-start gap-3">
                             <Show when={editedIconUrl()}>
                               <img
                                 src={editedIconUrl()!}
                                 alt=""
-                                class="h-10 w-10 shrink-0 rounded-sm border border-slate-700 bg-slate-900 object-contain"
+                                class="h-16 w-16 shrink-0 rounded-sm border border-slate-700 bg-slate-900 object-contain"
                                 loading="lazy"
                                 onError={(e) => {
                                   e.currentTarget.style.display = "none";
@@ -1289,16 +1270,7 @@ function ItemDiffTool() {
                         </div>
 
                         <div class="border border-slate-700 rounded-md p-2">
-                          <div class="mb-2 flex items-center justify-between">
-                            <div class="font-semibold text-slate-200">New</div>
-                            <button
-                              class={compactButtonClass(row.choice === "New")}
-                              disabled={row.new_id === null || row.new_name === null}
-                              onClick={() => setRowChoice(rowId, "New")}
-                            >
-                              New
-                            </button>
-                          </div>
+                          <div class="mb-2 font-semibold text-slate-200">New</div>
                           <div class="grid grid-cols-[8rem_minmax(0,1fr)] gap-y-1 gap-x-2">
                             <div class="text-slate-300">ID:</div>
                             <input
@@ -1336,41 +1308,92 @@ function ItemDiffTool() {
 
                       <div class="border-t border-slate-700 pt-2">
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
-                          <div class="flex flex-col gap-3">
-                            <div class="text-sm font-semibold">Flags</div>
-                            <div class={retailDiffPanelClass(flagsDifferFromRetail())}>
+                          <div class="text-sm font-semibold">Flags</div>
+                          <div class="text-sm font-semibold">Jobs</div>
+
+                          <div class={retailDiffPanelClass(flagsDifferFromRetail())}>
+                            <div class="mb-2 text-sm font-semibold text-slate-200">Current (read-only)</div>
+                            <Show
+                              when={currentFlags().length > 0}
+                              fallback={<div class="text-sm text-slate-400">No flags set.</div>}
+                            >
+                              <div class="grid grid-cols-3 gap-x-3 gap-y-1">
+                                <For each={currentFlags()}>
+                                  {(flag) => (
+                                    <div class={retailListValueClass(retailFlags().includes(flag) ? "same" : "current-only")}>
+                                      {flag}
+                                    </div>
+                                  )}
+                                </For>
+                              </div>
+                            </Show>
+                          </div>
+
+                          <Show
+                            when={hasEquipmentJobs}
+                            fallback={<div class="text-sm text-slate-400">No equipment jobs field on this item.</div>}
+                          >
+                            <div class={retailDiffPanelClass(jobsDifferFromRetail())}>
                               <div class="mb-2 text-sm font-semibold text-slate-200">Current (read-only)</div>
                               <Show
-                                when={currentFlags().length > 0}
-                                fallback={<div class="text-sm text-slate-400">No flags set.</div>}
+                                when={currentJobs().length > 0}
+                                fallback={<div class="text-sm text-slate-400">No jobs set.</div>}
                               >
                                 <div class="grid grid-cols-3 gap-x-3 gap-y-1">
-                                  <For each={currentFlags()}>
-                                    {(flag) => (
-                                      <div class={retailListValueClass(retailFlags().includes(flag) ? "same" : "current-only")}>
-                                        {flag}
+                                  <For each={currentJobs()}>
+                                    {(job) => (
+                                      <div class={retailListValueClass(retailJobs().includes(job) ? "same" : "current-only")}>
+                                        {job}
                                       </div>
                                     )}
                                   </For>
                                 </div>
                               </Show>
                             </div>
+                          </Show>
 
-                            <div class={retailDiffPanelClass(flagsDifferFromRetail())}>
+                          <div class={retailDiffPanelClass(flagsDifferFromRetail())}>
+                            <div class="mb-2 text-sm font-semibold text-slate-200">Retail (read-only)</div>
+                            <Show
+                              when={hasRetailEntry()}
+                              fallback={<div class="text-sm text-slate-400">Retail row missing for this item.</div>}
+                            >
+                              <Show
+                                when={retailFlags().length > 0}
+                                fallback={<div class="text-sm text-slate-400">No flags set.</div>}
+                              >
+                                <div class="grid grid-cols-3 gap-x-3 gap-y-1">
+                                  <For each={retailFlags()}>
+                                    {(flag) => (
+                                      <div class={retailListValueClass(currentFlags().includes(flag) ? "same" : "retail-only")}>
+                                        {flag}
+                                      </div>
+                                    )}
+                                  </For>
+                                </div>
+                              </Show>
+                            </Show>
+                          </div>
+
+                          <Show
+                            when={hasEquipmentJobs}
+                            fallback={<div class="hidden lg:block" aria-hidden="true"></div>}
+                          >
+                            <div class={retailDiffPanelClass(jobsDifferFromRetail())}>
                               <div class="mb-2 text-sm font-semibold text-slate-200">Retail (read-only)</div>
                               <Show
                                 when={hasRetailEntry()}
                                 fallback={<div class="text-sm text-slate-400">Retail row missing for this item.</div>}
                               >
                                 <Show
-                                  when={retailFlags().length > 0}
-                                  fallback={<div class="text-sm text-slate-400">No flags set.</div>}
+                                  when={retailJobs().length > 0}
+                                  fallback={<div class="text-sm text-slate-400">No jobs set.</div>}
                                 >
                                   <div class="grid grid-cols-3 gap-x-3 gap-y-1">
-                                    <For each={retailFlags()}>
-                                      {(flag) => (
-                                        <div class={retailListValueClass(currentFlags().includes(flag) ? "same" : "retail-only")}>
-                                          {flag}
+                                    <For each={retailJobs()}>
+                                      {(job) => (
+                                        <div class={retailListValueClass(currentJobs().includes(job) ? "same" : "retail-only")}>
+                                          {job}
                                         </div>
                                       )}
                                     </For>
@@ -1378,110 +1401,66 @@ function ItemDiffTool() {
                                 </Show>
                               </Show>
                             </div>
+                          </Show>
 
+                          <div class="border border-slate-700 rounded-md p-2">
+                            <div class="mb-2 text-sm font-semibold text-slate-200">Add / Remove (editable)</div>
+                            <div class="mb-2 text-xs text-slate-300">
+                              <span class="text-emerald-300">+{addedFlags().length}</span>
+                              {" "}added
+                              {"  "}
+                              <span class="text-rose-300">-{removedFlags().length}</span>
+                              {" "}removed
+                            </div>
+                            <div class="border border-slate-700 rounded-md p-2 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-x-3 gap-y-2">
+                              <For each={filteredFlagOptions}>
+                                {(flag) => (
+                                  <label class="grid min-w-0 grid-cols-[1rem,minmax(0,1fr)] items-start gap-x-2 text-xs leading-5">
+                                    <input
+                                      type="checkbox"
+                                      class="mt-1"
+                                      disabled={!manualEdit()}
+                                      checked={targetFlags().includes(flag)}
+                                      onChange={(e) => toggleRowNewFlag(rowId, flag, e.currentTarget.checked)}
+                                    />
+                                    <span class="min-w-0 break-words" title={flag}>{flag}</span>
+                                  </label>
+                                )}
+                              </For>
+                            </div>
+                          </div>
+
+                          <Show
+                            when={hasEquipmentJobs}
+                            fallback={<div class="hidden lg:block" aria-hidden="true"></div>}
+                          >
                             <div class="border border-slate-700 rounded-md p-2">
                               <div class="mb-2 text-sm font-semibold text-slate-200">Add / Remove (editable)</div>
                               <div class="mb-2 text-xs text-slate-300">
-                                <span class="text-emerald-300">+{addedFlags().length}</span>
+                                <span class="text-emerald-300">+{addedJobs().length}</span>
                                 {" "}added
                                 {"  "}
-                                <span class="text-rose-300">-{removedFlags().length}</span>
+                                <span class="text-rose-300">-{removedJobs().length}</span>
                                 {" "}removed
                               </div>
-                              <div class="border border-slate-700 rounded-md p-2 grid grid-cols-2 sm:grid-cols-3 2xl:grid-cols-4 gap-x-3 gap-y-1">
-                                <For each={filteredFlagOptions}>
-                                  {(flag) => (
-                                    <label class="flex items-center gap-2 text-sm">
+                              <div class="border border-slate-700 rounded-md p-2 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-x-3 gap-y-2">
+                                <For each={filteredJobOptions}>
+                                  {(job) => (
+                                    <label class="grid min-w-0 grid-cols-[1rem,minmax(0,1fr)] items-start gap-x-2 text-xs leading-5">
                                       <input
                                         type="checkbox"
+                                        class="mt-1"
                                         disabled={!manualEdit()}
-                                        checked={targetFlags().includes(flag)}
-                                        onChange={(e) => toggleRowNewFlag(rowId, flag, e.currentTarget.checked)}
+                                        checked={targetJobs().includes(job)}
+                                        onChange={(e) => toggleRowNewJob(rowId, job, e.currentTarget.checked)}
                                       />
-                                      <span class="truncate whitespace-nowrap" title={flag}>{flag}</span>
+                                      <span class="min-w-0 break-words" title={job}>{job}</span>
                                     </label>
                                   )}
                                 </For>
                               </div>
                             </div>
-                          </div>
-
-                          <div class="flex flex-col gap-3">
-                            <div class="text-sm font-semibold">Jobs</div>
-                            <Show
-                              when={hasEquipmentJobs}
-                              fallback={<div class="text-sm text-slate-400">No equipment jobs field on this item.</div>}
-                            >
-                              <>
-                                <div class={retailDiffPanelClass(jobsDifferFromRetail())}>
-                                  <div class="mb-2 text-sm font-semibold text-slate-200">Current (read-only)</div>
-                                  <Show
-                                    when={currentJobs().length > 0}
-                                    fallback={<div class="text-sm text-slate-400">No jobs set.</div>}
-                                  >
-                                    <div class="grid grid-cols-3 gap-x-3 gap-y-1">
-                                      <For each={currentJobs()}>
-                                        {(job) => (
-                                          <div class={retailListValueClass(retailJobs().includes(job) ? "same" : "current-only")}>
-                                            {job}
-                                          </div>
-                                        )}
-                                      </For>
-                                    </div>
-                                  </Show>
-                                </div>
-
-                                <div class={retailDiffPanelClass(jobsDifferFromRetail())}>
-                                  <div class="mb-2 text-sm font-semibold text-slate-200">Retail (read-only)</div>
-                                  <Show
-                                    when={hasRetailEntry()}
-                                    fallback={<div class="text-sm text-slate-400">Retail row missing for this item.</div>}
-                                  >
-                                    <Show
-                                      when={retailJobs().length > 0}
-                                      fallback={<div class="text-sm text-slate-400">No jobs set.</div>}
-                                    >
-                                      <div class="grid grid-cols-3 gap-x-3 gap-y-1">
-                                        <For each={retailJobs()}>
-                                          {(job) => (
-                                            <div class={retailListValueClass(currentJobs().includes(job) ? "same" : "retail-only")}>
-                                              {job}
-                                            </div>
-                                          )}
-                                        </For>
-                                      </div>
-                                    </Show>
-                                  </Show>
-                                </div>
-
-                                <div class="border border-slate-700 rounded-md p-2">
-                                  <div class="mb-2 text-sm font-semibold text-slate-200">Add / Remove (editable)</div>
-                                  <div class="mb-2 text-xs text-slate-300">
-                                    <span class="text-emerald-300">+{addedJobs().length}</span>
-                                    {" "}added
-                                    {"  "}
-                                    <span class="text-rose-300">-{removedJobs().length}</span>
-                                    {" "}removed
-                                  </div>
-                                  <div class="border border-slate-700 rounded-md p-2 grid grid-cols-2 sm:grid-cols-3 2xl:grid-cols-4 gap-x-3 gap-y-1">
-                                    <For each={filteredJobOptions}>
-                                      {(job) => (
-                                        <label class="flex items-center gap-2 text-sm">
-                                          <input
-                                            type="checkbox"
-                                            disabled={!manualEdit()}
-                                            checked={targetJobs().includes(job)}
-                                            onChange={(e) => toggleRowNewJob(rowId, job, e.currentTarget.checked)}
-                                          />
-                                          <span class="truncate whitespace-nowrap" title={job}>{job}</span>
-                                        </label>
-                                      )}
-                                    </For>
-                                  </div>
-                                </div>
-                              </>
-                            </Show>
-                          </div>
+                          </Show>
                         </div>
                       </div>
 

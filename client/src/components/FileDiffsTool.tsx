@@ -5,7 +5,7 @@ import { FolderDiffResult, compareEntityNameFolders } from "../custom_bindings";
 import { useData } from "../store";
 import { unwrap } from "../util";
 
-const compactButtonBaseClass = "my-0 px-2 py-0.5 text-sm font-normal shadow-none border rounded-md";
+const compactButtonBaseClass = "my-0 px-1.5 py-0.5 text-xs font-normal shadow-none border rounded-md";
 const compactButtonIdleClass = "bg-slate-800 border-slate-500 text-slate-200";
 function compactButtonClass() {
   return `${compactButtonBaseClass} ${compactButtonIdleClass}`;
@@ -228,7 +228,7 @@ function FileDiffsTool() {
           <button class={compactButtonClass()} disabled={isComparing()} onclick={runCompare}>
             {isComparing() ? "Comparing..." : "Compare folders"}
           </button>
-          <label class="flex items-center gap-2 text-sm">
+          <label class="flex items-center gap-3 text-sm">
             <input
               type="checkbox"
               checked={showUnchanged()}

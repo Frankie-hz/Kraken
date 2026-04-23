@@ -16,8 +16,8 @@
       "icons/icon.ico"
     ]
   },
-  "productName": "XI Tinkerer",
-  "version": "0.11.0",
+  "productName": "Kraken",
+  "version": "1.0.0",
   "identifier": "inouno.xi-tinkerer",
   "plugins": {
     "updater": {
@@ -33,7 +33,7 @@
       {
         "fullscreen": false,
         "resizable": true,
-        "title": "XI Tinkerer",
+        "title": "Kraken",
         "width": 1024,
         "height": 768
       }

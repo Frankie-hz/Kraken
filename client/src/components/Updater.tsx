@@ -9,17 +9,16 @@ const Updater = () => {
     const [getProgress, setProgress] = createSignal<string>("");
 
     return (
-        <div class="px-2 flex items-center justify-end">
+        <div class="updater-shell">
             <Switch>
                 <Match when={getProgress()}>
-                    Updating {getProgress()}
+                    <div class="updater-badge">Updating {getProgress()}</div>
                 </Match>
                 <Match when={!getProgress() && !update.loading && update()}>
 
-                    <div class="pr-2">An update is available for XI Tinkerer ({update()?.version})</div>
-                    <div class="pr-4">
+                    <div class="updater-badge">Kraken update available ({update()?.version})</div>
+                    <div>
                         <button
-                            class="button accept w-full"
                             onClick={async () => {
                                 await startUpdate(update()!, setProgress);
                             }}
@@ -29,7 +28,7 @@ const Updater = () => {
                     </div>
                 </Match>
             </Switch>
-            <div class="text-sm italic font-mono text-slate-300">v{appVersion()}</div>
+            <div class="version-tag">v{appVersion()}</div>
         </div>
     );
 };

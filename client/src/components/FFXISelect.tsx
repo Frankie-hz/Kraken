@@ -6,22 +6,27 @@ function FFXISelect() {
   } = useData();
 
   return (
-    <div>
-      <h2>FFXI Folder</h2>
-      <i>
-        This should point your FFXI installation. It will be used to read DATs from,
-        that can be exported into human-readable files.
-      </i>
-
-      <div>
-        <button onclick={() => promptDatFolder()}>Select a FFXI folder</button>
+    <div class="setup-card">
+      <div class="setup-card__header">
         <div>
-          Current FFXI folder:
-          {getDatFolder() ? (
-            <span class="text-green-200 px-2">{getDatFolder()}</span>
-          ) : (
-            <span class="text-red-200 px-2">None</span>
-          )}
+          <div class="eyebrow">Source DATs</div>
+          <h2>FFXI Folder</h2>
+        </div>
+        <div class={`status-pill ${getDatFolder() ? "is-ready" : "is-missing"}`}>
+          {getDatFolder() ? "Connected" : "Required"}
+        </div>
+      </div>
+
+      <p class="muted-note">
+        Point Kraken at your FFXI installation so it can read the original DATs and export them into editable files.
+      </p>
+
+      <button onclick={() => promptDatFolder()}>Select FFXI folder</button>
+
+      <div class="path-card">
+        <span class="path-card__label">Current source path</span>
+        <div class={`path-card__value ${getDatFolder() ? "is-ready" : "is-missing"}`}>
+          {getDatFolder() ?? "No FFXI folder selected yet."}
         </div>
       </div>
     </div>

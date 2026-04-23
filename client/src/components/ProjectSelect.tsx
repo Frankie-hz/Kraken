@@ -20,38 +20,42 @@ function ProjectSelect() {
   };
 
   return (
-    <div class="flex flex-col space-y-2">
-      <div>
-        <h2>Project Folder</h2>
-        <i>
-          This should point to a folder where the human-readable data files should be exported to and live in.<br />
-          This is also where DAT files will be generated from the human-readable data files when requested.
-        </i>
-
+    <div class="setup-card">
+      <div class="setup-card__header">
         <div>
-          <button onclick={() => promptProjectFolder()}>
-            Select a project folder
-          </button>
-          <div>Current project folder:
-            {getProjectFolder() ? (
-              <span class="text-green-200 px-2">{getProjectFolder()}</span>
-            ) : (
-              <span class="text-red-200 px-2">None</span>
-            )}
-            <Show when={isLoading()}>
-              <span class="italic">(Loading...)</span>
-            </Show>
-          </div>
-
+          <div class="eyebrow">Workspace</div>
+          <h2>Project Folder</h2>
+        </div>
+        <div class={`status-pill ${getProjectFolder() ? "is-ready" : "is-missing"}`}>
+          {getProjectFolder() ? "Connected" : "Required"}
         </div>
       </div>
 
-      <div>
-        Recently opened projects:
-        <ul>
-          <For each={getRecentProjectFolders()} fallback={"None"}>
+      <p class="muted-note">
+        Point this to the folder where your readable source files live. Kraken exports YAML there and uses it as the
+        base for DAT regeneration.
+      </p>
+
+      <button onclick={() => promptProjectFolder()}>
+        Select project folder
+      </button>
+
+      <div class="path-card">
+        <span class="path-card__label">Current project path</span>
+        <div class={`path-card__value ${getProjectFolder() ? "is-ready" : "is-missing"}`}>
+          {getProjectFolder() ?? "No project folder selected yet."}
+          <Show when={isLoading()}>
+            <span class="helper-text"> Loading...</span>
+          </Show>
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-2">
+        <span class="path-card__label">Recent project folders</span>
+        <ul class="recent-list">
+          <For each={getRecentProjectFolders()} fallback={<li class="helper-text">No recent projects yet.</li>}>
             {(recentProject) => (
-              <li class="clickable" onclick={() => updateFolder(recentProject)}>
+              <li class="recent-item" onclick={() => updateFolder(recentProject)}>
                 {recentProject}
               </li>
             )}

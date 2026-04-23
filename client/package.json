@@ -1,7 +1,7 @@
 {
-  "name": "xi_tinkerer",
-  "version": "0.12.0",
-  "description": "XI Tinkerer",
+  "name": "kraken",
+  "version": "1.0.0",
+  "description": "Kraken",
   "scripts": {
     "start": "vite",
     "dev": "vite",

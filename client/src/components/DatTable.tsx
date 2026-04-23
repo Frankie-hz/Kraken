@@ -122,21 +122,30 @@ function DatTable<T>
       .length;
   });
 
+  const visibleCount = createMemo(() => rows().length);
+  const filteredCount = createMemo(() => filteredRows().length);
+
   let inputRef: HTMLInputElement;
   onMount(() => {
     inputRef.focus();
   });
 
   return (
-    <div class="w-full">
-      <h1>{title}</h1>
-      <hr />
+    <div class="page-shell">
+      <div class="page-header">
+        <div>
+          <div class="eyebrow">DAT browser</div>
+          <h1>{title}</h1>
+        </div>
+        <div class="page-meta">
+          {visibleCount()} visible of {rowsResource().length} total
+        </div>
+      </div>
 
-      <div>
-        <div class="flex flex-row space-x-5">
+      <div class="surface-panel">
+        <div class="toolbar-row">
           <input
-            class="mt-3"
-            placeholder="Filter"
+            placeholder={`Filter ${title.toLowerCase()}`}
             ref={inputRef!}
             oninput={(e) => setFilterBy(e.target.value ?? "")}
           />
@@ -145,111 +154,124 @@ function DatTable<T>
             disabled={makingYamlCount() > 0 || !canProcess()}
             onclick={() => makeAllYaml()}
           >
-            Export all DATs
+            Export visible DATs
           </button>
 
           <button
             disabled={makingDatCount() > 0 || !canProcess()}
             onclick={() => makeAllDats()}
           >
-            Make all DATs
+            Build visible DATs
           </button>
+
+          <div class="toolbar-spacer"></div>
+          <div class="toolbar-stat">{filteredCount()} matching entries</div>
         </div>
 
-        <Show when={!rowsResource.loading} fallback={<div>Loading...</div>}>
-          <table class="table-auto">
-            <thead>
-              <tr>
-                <For each={columns}>
-                  {(col, idx) => (<th
-                    class="hover:cursor-pointer"
-                    onclick={() => updateSort(idx())}
-                  >
-                    {col.name}
-                  </th>)}
-                </For>
-                <th class="w-40">Export from DAT</th>
-                <th class="w-40">Generate DAT</th>
-              </tr>
-            </thead>
+        <Show when={!rowsResource.loading} fallback={<div class="loading-state">{`Loading ${title}...`}</div>}>
+          <div class="table-shell">
+            <table class="table-auto">
+              <thead>
+                <tr>
+                  <For each={columns}>
+                    {(col, idx) => (<th
+                      class="table-sortable"
+                      onclick={() => updateSort(idx())}
+                    >
+                      {col.name}
+                    </th>)}
+                  </For>
+                  <th class="w-40">Export from DAT</th>
+                  <th class="w-40">Generate DAT</th>
+                </tr>
+              </thead>
 
-            <tbody>
-              <For each={rows()}>
-                {(row) => {
-                  const descriptor = toDatDescriptor(row);
-                  return (
-                    <tr class="hover:bg-slate-700">
-                      <For each={columns}>
-                        {(col) => <td>{col.getter(row)}</td>}
-                      </For>
+              <tbody>
+                <For each={rows()}>
+                  {(row) => {
+                    const descriptor = toDatDescriptor(row);
+                    return (
+                      <tr>
+                        <For each={columns}>
+                          {(col) => <td>{col.getter(row)}</td>}
+                        </For>
 
-                      <Show
-                        when={canProcess()}
-                        fallback={
-                          <td colSpan={2}>
-                            <span class="italic text-sm">
-                              Select a project and FFXI folder.
-                            </span>
-                          </td>
-                        }
-                      >
-                        <td>
-                          <Switch>
-                            <Match when={isProcessing("Yaml", descriptor)}>
-                              <span class="italic">Exporting...</span>
-                            </Match>
-
-                            <Match when={true}>
-                              <span
-                                class="clickable pl-2 font-mono"
-                                onclick={async () => unwrap(await commands.makeYaml(descriptor, "English"))}
-                              >
-                                [EN]
+                        <Show
+                          when={canProcess()}
+                          fallback={
+                            <td colSpan={2}>
+                              <span class="helper-text">
+                                Select a project folder and FFXI folder to enable actions.
                               </span>
-                              <Show when={hasJp(row)}>
-                                <span
-                                  class="clickable pl-2 font-mono"
-                                  onclick={async () => unwrap(await commands.makeYaml(descriptor, "Japanese"))}
-                                >
-                                  [JP]
-                                </span>
-                              </Show>
-                            </Match>
-                          </Switch>
-                        </td>
-                        <td>
-                          <Switch>
-                            <Match when={isProcessing("Dat", descriptor)}>
-                              <span class="italic">Making...</span>
-                            </Match>
+                            </td>
+                          }
+                        >
+                          <td>
+                            <Switch>
+                              <Match when={isProcessing("Yaml", descriptor)}>
+                                <span class="helper-text">Exporting...</span>
+                              </Match>
 
-                            <Match when={true}>
-                              <Show when={hasWorkingFile(descriptor, "English")}>
-                                <span
-                                  class="clickable pl-2 font-mono"
-                                  onclick={async () => unwrap(await commands.makeDat(descriptor, "English"))}
-                                >
-                                  [EN]
-                                </span>
-                              </Show>
-                              <Show when={hasJp(row) && hasWorkingFile(descriptor, "Japanese")}>
-                                <span
-                                  class="clickable pl-2 font-mono"
-                                  onclick={async () => unwrap(await commands.makeDat(descriptor, "Japanese"))}
-                                >
-                                  [JP]
-                                </span>
-                              </Show>
-                            </Match>
-                          </Switch>
-                        </td>
-                      </Show>
-                    </tr>
-                  )
-                }}
-              </For>
-            </tbody>
-          </table>
+                              <Match when={true}>
+                                <div class="table-action-group">
+                                  <span
+                                    class="table-action"
+                                    onclick={async () => unwrap(await commands.makeYaml(descriptor, "English"))}
+                                  >
+                                    EN
+                                  </span>
+                                  <Show when={hasJp(row)}>
+                                    <span
+                                      class="table-action"
+                                      onclick={async () => unwrap(await commands.makeYaml(descriptor, "Japanese"))}
+                                    >
+                                      JP
+                                    </span>
+                                  </Show>
+                                </div>
+                              </Match>
+                            </Switch>
+                          </td>
+                          <td>
+                            <Switch>
+                              <Match when={isProcessing("Dat", descriptor)}>
+                                <span class="helper-text">Building...</span>
+                              </Match>
+
+                              <Match when={true}>
+                                <div class="table-action-group">
+                                  <Show when={hasWorkingFile(descriptor, "English")}>
+                                    <span
+                                      class="table-action"
+                                      onclick={async () => unwrap(await commands.makeDat(descriptor, "English"))}
+                                    >
+                                      EN
+                                    </span>
+                                  </Show>
+                                  <Show when={hasJp(row) && hasWorkingFile(descriptor, "Japanese")}>
+                                    <span
+                                      class="table-action"
+                                      onclick={async () => unwrap(await commands.makeDat(descriptor, "Japanese"))}
+                                    >
+                                      JP
+                                    </span>
+                                  </Show>
+                                </div>
+                              </Match>
+                            </Switch>
+                          </td>
+                        </Show>
+                      </tr>
+                    )
+                  }}
+                </For>
+              </tbody>
+            </table>
+          </div>
+        </Show>
+
+        <Show when={filteredCount() > visibleCount()}>
+          <div class="helper-text">{`Showing the first ${visibleCount()} results of ${filteredCount()} matches.`}</div>
         </Show>
       </div>
     </div>

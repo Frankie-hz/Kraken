@@ -86,67 +86,85 @@ function Table<
     }).slice(0, 1000);
   });
 
+  const visibleCount = createMemo(() => rows().length);
+  const filteredCount = createMemo(() => filteredRows().length);
+
   let inputRef: HTMLInputElement;
   onMount(() => {
     inputRef.focus();
   });
 
   return (
-    <div class="w-full h-screen">
-      <h1>{title}</h1>
-      <hr />
+    <div class="page-shell">
+      <div class="page-header">
+        <div>
+          <div class="eyebrow">Explorer</div>
+          <h1>{title}</h1>
+        </div>
+        <div class="page-meta">
+          {visibleCount()} visible of {rowsResource().length} total
+        </div>
+      </div>
 
-      <div class="w-full">
-        <div class="flex flex-row space-x-5">
+      <div class="surface-panel">
+        <div class="toolbar-row">
           <input
-            class="mt-3"
-            placeholder="Filter"
+            placeholder={`Filter ${title.toLowerCase()}`}
             ref={inputRef!}
             oninput={(e) => setFilterBy(e.target.value ?? "")}
           />
 
           {headerActions}
+
+          <div class="toolbar-spacer"></div>
+          <div class="toolbar-stat">{filteredCount()} matching entries</div>
         </div>
 
-        <Show when={!rowsResource.loading} fallback={<div>Loading...</div>}>
-          <table class="w-full h-full">
-            <thead>
-              <tr>
-                {columns.map((col) => (
-                  <th
-                    class="hover:cursor-pointer"
-                    onclick={() => updateSort(col.key)}
-                  >
-                    {col.name}
-                  </th>
-                ))}
+        <Show when={!rowsResource.loading} fallback={<div class="loading-state">{`Loading ${title}...`}</div>}>
+          <div class="table-shell">
+            <table class="w-full h-full">
+              <thead>
+                <tr>
+                  {columns.map((col) => (
+                    <th
+                      class="table-sortable"
+                      onclick={() => updateSort(col.key)}
+                    >
+                      {col.name}
+                    </th>
+                  ))}
 
-                {additionalColumns
-                  ? additionalColumns.map((col) => <th>{col.name}</th>)
-                  : undefined}
-              </tr>
-            </thead>
+                  {additionalColumns
+                    ? additionalColumns.map((col) => <th>{col.name}</th>)
+                    : undefined}
+                </tr>
+              </thead>
 
-            <tbody>
-              <For each={rows()}>
-                {(row) => {
-                  return (
-                    <tr class="hover:bg-slate-700">
-                      {columns.map((col) => (
-                        <td>{row[col.key]}</td>
-                      ))}
+              <tbody>
+                <For each={rows()}>
+                  {(row) => {
+                    return (
+                      <tr>
+                        {columns.map((col) => (
+                          <td>{row[col.key]}</td>
+                        ))}
 
-                      {additionalColumns
-                        ? additionalColumns.map((col) => (
-                          <td>{col.content(row)}</td>
-                        ))
-                        : undefined}
-                    </tr>
-                  );
-                }}
-              </For>
-            </tbody>
-          </table>
+                        {additionalColumns
+                          ? additionalColumns.map((col) => (
+                            <td>{col.content(row)}</td>
+                          ))
+                          : undefined}
+                      </tr>
+                    );
+                  }}
+                </For>
+              </tbody>
+            </table>
+          </div>
+        </Show>
+
+        <Show when={filteredCount() > visibleCount()}>
+          <div class="helper-text">{`Showing the first ${visibleCount()} results of ${filteredCount()} matches.`}</div>
         </Show>
       </div>
     </div>

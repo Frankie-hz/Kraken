@@ -112,7 +112,7 @@ function buildAutoSavePaths(
   return { yamlPath, datPath };
 }
 
-const compactButtonBaseClass = "my-0 px-2 py-0.5 text-sm font-normal shadow-none border rounded-md";
+const compactButtonBaseClass = "my-0 px-1.5 py-0.5 text-xs font-normal shadow-none border rounded-md";
 const compactButtonIdleClass = "bg-slate-800 border-slate-500 text-slate-200";
 const compactButtonActiveClass = "bg-green-800 border-green-500 text-slate-100";
 const ENTITY_DIFF_STATE_KEY = "xi_tinkerer_entity_diff_state_v1";

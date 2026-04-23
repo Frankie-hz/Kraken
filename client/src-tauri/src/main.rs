@@ -12,7 +12,7 @@ mod state;
 use cli::check_cli;
 use parking_lot::RwLock;
 use state::AppStateData;
-use tauri::Manager;
+use tauri::{Manager, image::Image};
 use tracing_subscriber::EnvFilter;
 
 // #[cfg(debug_assertions)]
@@ -105,9 +105,13 @@ fn main() {
             let app_state = RwLock::new(AppStateData::new(app));
             app.manage(app_state);
 
+            let window = app.get_webview_window("main").unwrap();
+            let app_icon = Image::from_bytes(include_bytes!("../icons/icon.png"))
+                .expect("failed to load app icon");
+            window.set_icon(app_icon).expect("failed to set app icon");
+
             #[cfg(debug_assertions)]
             {
-                let window = app.get_webview_window("main").unwrap();
                 window.open_devtools();
                 window.close_devtools();
             }

@@ -1,8 +1,9 @@
-import { message, open } from "@tauri-apps/plugin-dialog";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useSearchParams } from "@solidjs/router";
-import { For, Show, batch, createEffect, createMemo, createSignal, onMount } from "solid-js";
+import { For, Show, batch, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { createStore } from "solid-js/store";
 import { SpellDiffRow, compareSpellFiles, saveSpellDiff } from "../custom_bindings";
+import { showMessage } from "../dialogs";
 import { useData } from "../store";
 import { unwrap } from "../util";
 
@@ -41,19 +42,19 @@ function getRomRelativePath(path: string): string | null {
   return relative || null;
 }
 
-function getCustomOutputRoot(localEditRoot: string | null): string | null {
-  if (!localEditRoot) {
+function getOutputRoot(projectRoot: string | null): string | null {
+  if (!projectRoot) {
     return null;
   }
 
-  return localEditRoot.replaceAll("\\", "/").replace(/\/+$/, "");
+  return projectRoot.replaceAll("\\", "/").replace(/\/+$/, "");
 }
 
 function buildAutoSavePaths(
   sourcePath: string,
-  localEditRoot: string | null,
+  projectRoot: string | null,
 ): { yamlPath: string; datPath: string } | null {
-  const outputRoot = getCustomOutputRoot(localEditRoot);
+  const outputRoot = getOutputRoot(projectRoot);
   if (!outputRoot) {
     return null;
   }
@@ -151,6 +152,14 @@ function rowMatchesFilter(row: SpellDiffRow, filterText: string) {
   return haystack.includes(filterText);
 }
 
+function buildRowIndexById(rows: SpellDiffRow[]) {
+  const indexById = new Map<number, number>();
+  rows.forEach((row, index) => {
+    indexById.set(row.row, index);
+  });
+  return indexById;
+}
+
 const compactButtonBaseClass = "my-0 px-1.5 py-0.5 text-xs font-normal shadow-none border rounded-md";
 const compactButtonIdleClass = "bg-slate-800 border-slate-500 text-slate-200";
 const compactButtonActiveClass = "bg-green-800 border-green-500 text-slate-100";
@@ -164,7 +173,7 @@ const VIRTUAL_OVERSCAN_ROWS = 16;
 
 interface SpellEditorCachedState {
   spell_path: string;
-  rows: SpellDiffRow[];
+  rows?: SpellDiffRow[];
   table_filter: string;
   last_notice: string;
   last_saved_yaml_path: string;
@@ -175,12 +184,12 @@ function compactButtonClass(active = false) {
   return `${compactButtonBaseClass} ${active ? compactButtonActiveClass : compactButtonIdleClass}`;
 }
 
-function spellPathFromCustomDatRoot(localEditRoot: string | null): string | null {
-  if (!localEditRoot) {
+function spellPathFromProjectRoot(projectRoot: string | null): string | null {
+  if (!projectRoot) {
     return null;
   }
 
-  const normalizedRoot = localEditRoot.replaceAll("\\", "/").replace(/\/+$/, "");
+  const normalizedRoot = projectRoot.replaceAll("\\", "/").replace(/\/+$/, "");
   return `${normalizedRoot}/${SPELL_RELATIVE_PATH}`;
 }
 
@@ -207,13 +216,14 @@ function loadCachedState(): SpellEditorCachedState | null {
 
 function SpellDiffTool() {
   const {
-    folders: { getDatFolder, getLocalEditFolder },
+    folders: { getDatFolder, getProjectFolder },
   } = useData();
   const [searchParams] = useSearchParams();
   const cachedState = loadCachedState();
 
   const [spellPath, setSpellPath] = createSignal(cachedState?.spell_path ?? "");
   const [rows, setRows] = createStore<SpellDiffRow[]>(cachedState?.rows ?? []);
+  const [rowIndexById, setRowIndexById] = createSignal<Map<number, number>>(buildRowIndexById(cachedState?.rows ?? []));
   const [tableFilter, setTableFilter] = createSignal(cachedState?.table_filter ?? "");
   const [lastNotice, setLastNotice] = createSignal(cachedState?.last_notice ?? "");
   const [lastSavedYamlPath, setLastSavedYamlPath] = createSignal(cachedState?.last_saved_yaml_path ?? "");
@@ -222,6 +232,7 @@ function SpellDiffTool() {
   const [isLoading, setLoading] = createSignal(false);
   const [isSaving, setSaving] = createSignal(false);
   const [prefillApplied, setPrefillApplied] = createSignal(false);
+  const [rowsVersion, setRowsVersion] = createSignal(0);
 
   const [scrollTop, setScrollTop] = createSignal(0);
   const [tableViewportHeight, setTableViewportHeight] = createSignal(480);
@@ -230,6 +241,7 @@ function SpellDiffTool() {
 
   let tableContainerRef: HTMLDivElement | undefined;
   let scrollFrame = 0;
+  let persistStateTimer: number | undefined;
 
   const displayedRows = createMemo(() => {
     const filterText = tableFilter().trim().toLowerCase();
@@ -261,15 +273,17 @@ function SpellDiffTool() {
 
   const resetLoadedRows = () => {
     setRows([]);
+    setRowIndexById(new Map());
     for (const key of Object.keys(levelDrafts)) {
       delete levelDrafts[Number(key)];
     }
+    setRowsVersion((version) => version + 1);
   };
 
   const preferredSpellPath = createMemo(() => {
-    const spellPathFromLocalEditRoot = spellPathFromCustomDatRoot(getLocalEditFolder());
-    if (spellPathFromLocalEditRoot) {
-      return spellPathFromLocalEditRoot;
+    const spellPathFromProject = spellPathFromProjectRoot(getProjectFolder());
+    if (spellPathFromProject) {
+      return spellPathFromProject;
     }
 
     const ffxiRoot = getDatFolder();
@@ -307,7 +321,7 @@ function SpellDiffTool() {
 
   const loadSpellData = async () => {
     if (!spellPath()) {
-      await message("Select the spell DAT/YAML file first.");
+      await showMessage("Select the spell DAT/YAML file first.", { title: "Load Blocked", kind: "warning" });
       return;
     }
 
@@ -315,25 +329,26 @@ function SpellDiffTool() {
     try {
       const result = unwrap(await compareSpellFiles(spellPath(), spellPath()));
       batch(() => {
-        setRows(() =>
-          result.rows.map((row) => ({
-            ...row,
-            choice: "New",
-            new_name: row.new_name ?? row.old_name,
-            new_index: row.new_index ?? row.old_index,
-            new_mp_cost: row.new_mp_cost ?? row.old_mp_cost,
-            new_cast_time: row.new_cast_time ?? row.old_cast_time,
-            new_recast_time: row.new_recast_time ?? row.old_recast_time,
-            new_level_required: row.new_level_required ?? row.old_level_required ?? {},
-          })),
-        );
+        const preparedRows = result.rows.map((row) => ({
+          ...row,
+          choice: "New",
+          new_name: row.new_name ?? row.old_name,
+          new_index: row.new_index ?? row.old_index,
+          new_mp_cost: row.new_mp_cost ?? row.old_mp_cost,
+          new_cast_time: row.new_cast_time ?? row.old_cast_time,
+          new_recast_time: row.new_recast_time ?? row.old_recast_time,
+          new_level_required: row.new_level_required ?? row.old_level_required ?? {},
+        }));
+        setRows(() => preparedRows);
+        setRowIndexById(buildRowIndexById(preparedRows));
         setLastNotice(`Loaded ${result.rows.length} spell rows.`);
+        setRowsVersion((version) => version + 1);
       });
       for (const key of Object.keys(levelDrafts)) {
         delete levelDrafts[Number(key)];
       }
     } catch (err) {
-      await message(`${err}`);
+      await showMessage(`${err}`, { title: "Load Error", kind: "error" });
     } finally {
       setLoading(false);
     }
@@ -366,16 +381,39 @@ function SpellDiffTool() {
       return;
     }
 
-    const stateToSave: SpellEditorCachedState = {
-      spell_path: spellPath(),
-      rows: rows.map((row) => ({ ...row })),
-      table_filter: tableFilter(),
-      last_notice: lastNotice(),
-      last_saved_yaml_path: lastSavedYamlPath(),
-      last_saved_dat_path: lastSavedDatPath(),
-    };
+    spellPath();
+    rowsVersion();
+    tableFilter();
+    lastNotice();
+    lastSavedYamlPath();
+    lastSavedDatPath();
 
-    window.sessionStorage.setItem(SPELL_EDITOR_STATE_KEY, JSON.stringify(stateToSave));
+    if (persistStateTimer !== undefined) {
+      window.clearTimeout(persistStateTimer);
+    }
+
+    persistStateTimer = window.setTimeout(() => {
+      const stateToSave: SpellEditorCachedState = {
+        spell_path: spellPath(),
+        table_filter: tableFilter(),
+        last_notice: lastNotice(),
+        last_saved_yaml_path: lastSavedYamlPath(),
+        last_saved_dat_path: lastSavedDatPath(),
+      };
+
+      try {
+        window.sessionStorage.setItem(SPELL_EDITOR_STATE_KEY, JSON.stringify(stateToSave));
+      } catch (error) {
+        console.warn("Failed to persist spell editor UI state.", error);
+      }
+      persistStateTimer = undefined;
+    }, 250);
+  });
+
+  onCleanup(() => {
+    if (persistStateTimer !== undefined) {
+      window.clearTimeout(persistStateTimer);
+    }
   });
 
   onMount(() => {
@@ -409,7 +447,7 @@ function SpellDiffTool() {
     }
   };
 
-  const setRowNewU32 = (rowIndex: number, key: "new_mp_cost" | "new_cast_time" | "new_recast_time", value: string) => {
+  const setRowNewU32 = (rowId: number, key: "new_mp_cost" | "new_cast_time" | "new_recast_time", value: string) => {
     const trimmed = value.trim();
     if (!trimmed) {
       return;
@@ -420,7 +458,13 @@ function SpellDiffTool() {
       return;
     }
 
+    const rowIndex = rowIndexById().get(rowId);
+    if (rowIndex === undefined) {
+      return;
+    }
+
     setRows(rowIndex, key, Math.trunc(parsed));
+    setRowsVersion((version) => version + 1);
   };
 
   const levelInputValue = (row: SpellDiffRow) => {
@@ -436,7 +480,7 @@ function SpellDiffTool() {
     setLevelDrafts(rowId, value);
   };
 
-  const applyLevelDraft = async (rowIndex: number, rowId: number) => {
+  const applyLevelDraft = async (rowId: number) => {
     const draft = levelDrafts[rowId];
     if (draft === undefined) {
       return;
@@ -444,24 +488,34 @@ function SpellDiffTool() {
 
     const parsed = parseLevels(draft);
     if (!parsed) {
-      await message(`Invalid level format for row ${rowId}. Use format like WHM:1, RDM:3`);
+      await showMessage(`Invalid level format for row ${rowId}. Use format like WHM:1, RDM:3`, {
+        title: "Invalid Level Format",
+        kind: "warning",
+      });
+      return;
+    }
+
+    const rowIndex = rowIndexById().get(rowId);
+    if (rowIndex === undefined) {
       return;
     }
 
     setRows(rowIndex, "new_level_required", parsed);
     setLevelDrafts(rowId, formatLevels(parsed));
+    setRowsVersion((version) => version + 1);
   };
 
   const saveEdited = async () => {
     if (rows.length === 0) {
-      await message("Load the spell file first.");
+      await showMessage("Load the spell file first.", { title: "Save Blocked", kind: "warning" });
       return;
     }
 
-    const autoPaths = buildAutoSavePaths(spellPath(), getLocalEditFolder());
+    const autoPaths = buildAutoSavePaths(spellPath(), getProjectFolder());
     if (!autoPaths) {
-      await message(
-        "Set Custom DAT Root and use files under a ROM path (for example ROM/118/114.DAT) so save can be auto-routed.",
+      await showMessage(
+        "Set Project Folder and use files under a ROM path (for example ROM/118/114.DAT) so save can be auto-routed.",
+        { title: "Project Folder Required", kind: "warning" },
       );
       return;
     }
@@ -477,11 +531,12 @@ function SpellDiffTool() {
       setLastSavedYamlPath(result.out_yaml_path);
       setLastSavedDatPath(result.out_dat_path ?? "");
       setLastNotice(`Saved ${result.written_count} spell entries.`);
-      await message(
+      await showMessage(
         `Saved ${result.written_count} spell entries.\nYAML: ${result.out_yaml_path}${result.out_dat_path ? `\nDAT: ${result.out_dat_path}` : ""}`,
+        { title: "Saved", kind: "info" },
       );
     } catch (err) {
-      await message(`${err}`);
+      await showMessage(`${err}`, { title: "Save Error", kind: "error" });
     } finally {
       setSaving(false);
     }
@@ -614,7 +669,7 @@ function SpellDiffTool() {
                           value={levelInputValue(row)}
                           onInput={(e) => setLevelDraft(row.row, e.currentTarget.value)}
                           onBlur={() => {
-                            void applyLevelDraft(row.row, row.row);
+                            void applyLevelDraft(row.row);
                           }}
                         />
                       </td>

@@ -1,6 +1,6 @@
-import { ask, message, open } from "@tauri-apps/plugin-dialog";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useSearchParams } from "@solidjs/router";
-import { For, Show, batch, createDeferred, createEffect, createMemo, createSignal, onMount } from "solid-js";
+import { For, Show, batch, createDeferred, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import {
   EntityDiffChoice,
@@ -8,6 +8,7 @@ import {
   compareItemFiles,
   saveItemDiff,
 } from "../custom_bindings";
+import { showConfirm, showMessage } from "../dialogs";
 import { useData } from "../store";
 import { unwrap } from "../util";
 
@@ -118,19 +119,19 @@ function getRomRelativePath(path: string): string | null {
   return relative || null;
 }
 
-function getCustomOutputRoot(localEditRoot: string | null): string | null {
-  if (!localEditRoot) {
+function getOutputRoot(projectRoot: string | null): string | null {
+  if (!projectRoot) {
     return null;
   }
 
-  return localEditRoot.replaceAll("\\", "/").replace(/\/+$/, "");
+  return projectRoot.replaceAll("\\", "/").replace(/\/+$/, "");
 }
 
 function buildAutoSavePaths(
   sourcePath: string,
-  localEditRoot: string | null,
+  projectRoot: string | null,
 ): { yamlPath: string; datPath: string } | null {
-  const outputRoot = getCustomOutputRoot(localEditRoot);
+  const outputRoot = getOutputRoot(projectRoot);
   if (!outputRoot) {
     return null;
   }
@@ -164,7 +165,7 @@ const VIRTUAL_OVERSCAN_ROWS = 16;
 const ITEM_FLAG_OPTIONS = [
   "Ex",
   "WallHanging",
-  "Flag01",
+  "GmOnly",
   "MysteryBox",
   "MogGarden",
   "CanSendPOL",
@@ -209,7 +210,7 @@ const ITEM_JOB_OPTIONS = [
 interface ItemDiffCachedState {
   edited_path: string;
   new_retail_path: string;
-  rows: EntityDiffRow[];
+  rows?: EntityDiffRow[];
   retail_snapshot_by_row?: Record<number, ItemDiffRetailSnapshot>;
   old_count: number;
   new_count: number;
@@ -248,14 +249,6 @@ function isRetailChangedRow(row: EntityDiffRow, retailSnapshot?: ItemDiffRetailS
     !arraysEqual(normalizedStringList(row.old_flags), retailFlags) ||
     !arraysEqual(normalizedStringList(row.old_jobs), retailJobs) ||
     (row.old_description ?? null) !== retailDescription
-  );
-}
-
-function computeRetailChangedRowIds(rows: EntityDiffRow[], retailSnapshotByRow: Record<number, ItemDiffRetailSnapshot>) {
-  return new Set(
-    rows
-      .filter((row) => isRetailChangedRow(row, retailSnapshotByRow[row.row]))
-      .map((row) => row.row),
   );
 }
 
@@ -344,9 +337,28 @@ function normalizedStringList(values: string[] | null | undefined): string[] {
   return Array.from(new Set((values ?? []).map((value) => value.trim()).filter((value) => value.length > 0))).sort();
 }
 
+function buildRowIndexById(rows: EntityDiffRow[]) {
+  const indexById = new Map<number, number>();
+  rows.forEach((row, index) => {
+    indexById.set(row.row, index);
+  });
+  return indexById;
+}
+
+function buildRetailChangedRowIdSet(
+  rows: EntityDiffRow[],
+  retailSnapshotByRow: Record<number, ItemDiffRetailSnapshot>,
+) {
+  return new Set(
+    rows
+      .filter((row) => isRetailChangedRow(row, retailSnapshotByRow[row.row]))
+      .map((row) => row.row),
+  );
+}
+
 function ItemDiffTool() {
   const {
-    folders: { getDatFolder, getLocalEditFolder },
+    folders: { getDatFolder, getProjectFolder },
   } = useData();
   const [searchParams] = useSearchParams();
   const cachedState = loadCachedState();
@@ -355,8 +367,12 @@ function ItemDiffTool() {
   const [newRetailPath, setNewRetailPath] = createSignal(cachedState?.new_retail_path ?? "");
 
   const [rows, setRows] = createStore<EntityDiffRow[]>(cachedState?.rows ?? []);
+  const [rowIndexById, setRowIndexById] = createSignal<Map<number, number>>(buildRowIndexById(cachedState?.rows ?? []));
   const [retailSnapshotByRow, setRetailSnapshotByRow] = createSignal<Record<number, ItemDiffRetailSnapshot>>(
     cachedState?.retail_snapshot_by_row ?? {},
+  );
+  const [changedRowIds, setChangedRowIds] = createSignal<Set<number>>(
+    buildRetailChangedRowIdSet(cachedState?.rows ?? [], cachedState?.retail_snapshot_by_row ?? {}),
   );
   const [oldCount, setOldCount] = createSignal(cachedState?.old_count ?? 0);
   const [newCount, setNewCount] = createSignal(cachedState?.new_count ?? 0);
@@ -375,16 +391,25 @@ function ItemDiffTool() {
   const [lastNotice, setLastNotice] = createSignal(cachedState?.last_notice ?? "");
   const [lastSavedYamlPath, setLastSavedYamlPath] = createSignal(cachedState?.last_saved_yaml_path ?? "");
   const [lastSavedDatPath, setLastSavedDatPath] = createSignal(cachedState?.last_saved_dat_path ?? "");
+  const [rowsVersion, setRowsVersion] = createSignal(0);
   const [scrollTop, setScrollTop] = createSignal(0);
   const [tableViewportHeight, setTableViewportHeight] = createSignal(480);
-  const changedRowIds = createMemo(() => computeRetailChangedRowIds(rows, retailSnapshotByRow()));
 
   let tableContainerRef: HTMLDivElement | undefined;
   let scrollFrame = 0;
+  let persistStateTimer: number | undefined;
 
   const changedRowsSelectedOld = createMemo(() => {
     const changed = changedRowIds();
-    return rows.filter((row) => changed.has(row.row) && row.choice === "Old").length;
+    const indexById = rowIndexById();
+    let count = 0;
+    for (const rowId of changed) {
+      const index = indexById.get(rowId);
+      if (index !== undefined && rows[index]?.choice === "Old") {
+        count += 1;
+      }
+    }
+    return count;
   });
 
   const rowSearchIndex = createMemo(() => {
@@ -459,7 +484,11 @@ function ItemDiffTool() {
     if (rowId === null) {
       return null;
     }
-    return rows.find((row) => row.row === rowId) ?? null;
+    const index = rowIndexById().get(rowId);
+    if (index === undefined) {
+      return null;
+    }
+    return rows[index] ?? null;
   });
 
   createEffect(() => {
@@ -488,11 +517,14 @@ function ItemDiffTool() {
 
   const resetLoadedRows = () => {
     setRows([]);
+    setRowIndexById(new Map());
     setRetailSnapshotByRow({});
+    setChangedRowIds(new Set());
     setOldCount(0);
     setNewCount(0);
     setChangedCount(0);
     setSelectedRowId(null);
+    setRowsVersion((version) => version + 1);
   };
 
   const setEditedFile = (path: string) => {
@@ -552,7 +584,7 @@ function ItemDiffTool() {
     }
 
     const currentSelected = selectedRowId();
-    if (currentSelected === null || !rows.some((row) => row.row === currentSelected)) {
+    if (currentSelected === null || !rowIndexById().has(currentSelected)) {
       setSelectedRowId(rows[0].row);
     }
   });
@@ -562,24 +594,54 @@ function ItemDiffTool() {
       return;
     }
 
-    const stateToSave: ItemDiffCachedState = {
-      edited_path: editedPath(),
-      new_retail_path: newRetailPath(),
-      rows: rows.map((row) => ({ ...row })),
-      retail_snapshot_by_row: retailSnapshotByRow(),
-      old_count: oldCount(),
-      new_count: newCount(),
-      changed_count: changedCount(),
-      show_changed_only: showChangedOnly(),
-      table_filter: tableFilter(),
-      manual_edit: manualEdit(),
-      selected_row: selectedRowId(),
-      last_notice: lastNotice(),
-      last_saved_yaml_path: lastSavedYamlPath(),
-      last_saved_dat_path: lastSavedDatPath(),
-    };
+    editedPath();
+    newRetailPath();
+    retailSnapshotByRow();
+    rowsVersion();
+    oldCount();
+    newCount();
+    changedCount();
+    showChangedOnly();
+    tableFilter();
+    manualEdit();
+    selectedRowId();
+    lastNotice();
+    lastSavedYamlPath();
+    lastSavedDatPath();
 
-    window.sessionStorage.setItem(ITEM_DIFF_STATE_KEY, JSON.stringify(stateToSave));
+    if (persistStateTimer !== undefined) {
+      window.clearTimeout(persistStateTimer);
+    }
+
+    persistStateTimer = window.setTimeout(() => {
+      const stateToSave: ItemDiffCachedState = {
+        edited_path: editedPath(),
+        new_retail_path: newRetailPath(),
+        old_count: oldCount(),
+        new_count: newCount(),
+        changed_count: changedCount(),
+        show_changed_only: showChangedOnly(),
+        table_filter: tableFilter(),
+        manual_edit: manualEdit(),
+        selected_row: selectedRowId(),
+        last_notice: lastNotice(),
+        last_saved_yaml_path: lastSavedYamlPath(),
+        last_saved_dat_path: lastSavedDatPath(),
+      };
+
+      try {
+        window.sessionStorage.setItem(ITEM_DIFF_STATE_KEY, JSON.stringify(stateToSave));
+      } catch (error) {
+        console.warn("Failed to persist item diff UI state.", error);
+      }
+      persistStateTimer = undefined;
+    }, 250);
+  });
+
+  onCleanup(() => {
+    if (persistStateTimer !== undefined) {
+      window.clearTimeout(persistStateTimer);
+    }
   });
 
   const syncTableViewport = () => {
@@ -607,6 +669,10 @@ function ItemDiffTool() {
 
     const handleResize = () => syncTableViewport();
     window.addEventListener("resize", handleResize);
+
+    if (rows.length === 0 && editedPath() && newRetailPath()) {
+      void runCompare();
+    }
 
     return () => {
       if (scrollFrame !== 0) {
@@ -636,7 +702,7 @@ function ItemDiffTool() {
 
   const runCompare = async () => {
     if (!editedPath() || !newRetailPath()) {
-      await message("Select edited and new retail item files first.");
+      await showMessage("Select edited and new retail item files first.", { title: "Compare Required", kind: "warning" });
       return;
     }
 
@@ -670,28 +736,54 @@ function ItemDiffTool() {
       }));
       batch(() => {
         setRows(() => preparedRows);
+        setRowIndexById(buildRowIndexById(preparedRows));
         setRetailSnapshotByRow(nextRetailSnapshotByRow);
+        setChangedRowIds(buildRetailChangedRowIdSet(preparedRows, nextRetailSnapshotByRow));
         setOldCount(result.old_count);
         setNewCount(result.new_count);
         setChangedCount(result.changed_count);
         setSelectedRowId(preparedRows[0]?.row ?? null);
         setLastNotice(`Loaded ${result.changed_count} changed row(s).`);
+        setRowsVersion((version) => version + 1);
       });
     } catch (err) {
-      await message(`${err}`);
+      await showMessage(`${err}`, { title: "Compare Error", kind: "error" });
     } finally {
       setComparing(false);
     }
   };
 
   const updateRowById = (rowId: number, updater: (row: EntityDiffRow) => void) => {
-    setRows(produce((draft) => {
-      const row = draft.find((entry) => entry.row === rowId);
-      if (!row) {
-        return;
-      }
-      updater(row);
-    }));
+    const index = rowIndexById().get(rowId);
+    if (index === undefined) {
+      return;
+    }
+
+    const currentRow = rows[index];
+    if (!currentRow) {
+      return;
+    }
+
+    const nextRow = { ...currentRow };
+    updater(nextRow);
+
+    const retailSnapshot = retailSnapshotByRow()[rowId];
+    const wasChanged = isRetailChangedRow(currentRow, retailSnapshot);
+    const isNowChanged = isRetailChangedRow(nextRow, retailSnapshot);
+
+    setRows(index, nextRow);
+    if (wasChanged !== isNowChanged) {
+      setChangedRowIds((current) => {
+        const next = new Set(current);
+        if (isNowChanged) {
+          next.add(rowId);
+        } else {
+          next.delete(rowId);
+        }
+        return next;
+      });
+    }
+    setRowsVersion((version) => version + 1);
   };
 
   const selectRow = (rowId: number) => {
@@ -780,7 +872,10 @@ function ItemDiffTool() {
   };
 
   const toggleRowNewFlag = (rowId: number, flag: string, enabled: boolean) => {
-    const row = rows.find((entry) => entry.row === rowId);
+    const row = (() => {
+      const index = rowIndexById().get(rowId);
+      return index === undefined ? undefined : rows[index];
+    })();
     const current = new Set(normalizedStringList(row?.new_flags ?? row?.old_flags));
     if (enabled) {
       current.add(flag);
@@ -792,7 +887,10 @@ function ItemDiffTool() {
 
 
   const toggleRowNewJob = (rowId: number, job: string, enabled: boolean) => {
-    const row = rows.find((entry) => entry.row === rowId);
+    const row = (() => {
+      const index = rowIndexById().get(rowId);
+      return index === undefined ? undefined : rows[index];
+    })();
     const current = normalizedStringList(row?.new_jobs ?? row?.old_jobs);
     const knownJobOptions = new Set(ITEM_JOB_OPTIONS);
     const hiddenJobs = current.filter((entry) => !knownJobOptions.has(entry));
@@ -832,21 +930,22 @@ function ItemDiffTool() {
 
       }
     }));
+    setRowsVersion((version) => version + 1);
   };
 
   const removeFlagFromAllItems = async () => {
     if (rows.length === 0) {
-      await message("Compare files first so there are rows to update.");
+      await showMessage("Compare files first so there are rows to update.", { title: "Action Blocked", kind: "warning" });
       return;
     }
 
     const flag = bulkFlagToRemove().trim();
     if (!flag) {
-      await message("Pick a flag first.");
+      await showMessage("Pick a flag first.", { title: "Flag Required", kind: "warning" });
       return;
     }
 
-    const confirmed = await ask(
+    const confirmed = await showConfirm(
       `Danger: Remove "${flag}" from every loaded item row?\n\nThis applies globally and can change many items at once.`,
       {
         title: "Global Flag Removal",
@@ -877,23 +976,25 @@ function ItemDiffTool() {
         }
       }
     }));
+    setChangedRowIds(buildRetailChangedRowIdSet(rows, retailSnapshotByRow()));
+    setRowsVersion((version) => version + 1);
 
     setLastNotice(`Unchecked "${flag}" on editable side for ${affectedRows} row(s). Review and Save merged.`);
   };
 
   const removeJobFromAllItems = async () => {
     if (rows.length === 0) {
-      await message("Compare files first so there are rows to update.");
+      await showMessage("Compare files first so there are rows to update.", { title: "Action Blocked", kind: "warning" });
       return;
     }
 
     const job = bulkJobToRemove().trim();
     if (!job) {
-      await message("Pick a job first.");
+      await showMessage("Pick a job first.", { title: "Job Required", kind: "warning" });
       return;
     }
 
-    const confirmed = await ask(
+    const confirmed = await showConfirm(
       `Danger: Remove "${job}" from every loaded item row?\n\nThis applies globally and can change many items at once.`,
       {
         title: "Global Job Removal",
@@ -924,26 +1025,29 @@ function ItemDiffTool() {
         }
       }
     }));
+    setChangedRowIds(buildRetailChangedRowIdSet(rows, retailSnapshotByRow()));
+    setRowsVersion((version) => version + 1);
 
     setLastNotice(`Unchecked "${job}" on editable side for ${affectedRows} row(s). Review and Save merged.`);
   };
 
   const saveMerged = async () => {
     if (rows.length === 0) {
-      await message("Compare files first so there is something to save.");
+      await showMessage("Compare files first so there is something to save.", { title: "Nothing To Save", kind: "warning" });
       return;
     }
 
     if (!editedPath() || !newRetailPath()) {
-      await message("Select edited and new retail item files first.");
+      await showMessage("Select edited and new retail item files first.", { title: "Save Blocked", kind: "warning" });
       return;
     }
 
     const sourcePath = editedPath();
-    const autoPaths = buildAutoSavePaths(sourcePath, getLocalEditFolder());
+    const autoPaths = buildAutoSavePaths(sourcePath, getProjectFolder());
     if (!autoPaths) {
-      await message(
-        "Set Custom DAT Root and use files under a ROM path (for example ROM/2/13.DAT) so save can be auto-routed.",
+      await showMessage(
+        "Set Project Folder and use files under a ROM path (for example ROM/2/13.DAT) so save can be auto-routed.",
+        { title: "Project Folder Required", kind: "warning" },
       );
       return;
     }
@@ -955,7 +1059,7 @@ function ItemDiffTool() {
       normalizePathForCompare(outYamlPath) === normalizedRetailPath ||
       (!!outDatPath && normalizePathForCompare(outDatPath) === normalizedRetailPath);
     if (writesToRetailFile) {
-      await message("Refusing to save: output path resolves to the selected New Retail file.");
+      await showMessage("Refusing to save: output path resolves to the selected New Retail file.", { title: "Save Blocked", kind: "error" });
       return;
     }
 
@@ -979,11 +1083,12 @@ function ItemDiffTool() {
       setLastNotice(
         `Saved ${result.written_count} entries. Edited source now points to: ${preferredEditedPath}`,
       );
-      await message(
+      await showMessage(
         `Saved ${result.written_count} entries.\nYAML: ${result.out_yaml_path}${result.out_dat_path ? `\nDAT: ${result.out_dat_path}` : ""}`,
+        { title: "Saved", kind: "info" },
       );
     } catch (err) {
-      await message(`${err}`);
+      await showMessage(`${err}`, { title: "Save Error", kind: "error" });
     } finally {
       setSaving(false);
     }
@@ -1016,7 +1121,7 @@ function ItemDiffTool() {
                 class={`${compactButtonClass()} whitespace-nowrap`}
                 onClick={() => pickFile(
                   setEditedFile,
-                  pickerDefaultPath(editedPath(), getLocalEditFolder()),
+                  pickerDefaultPath(editedPath(), getProjectFolder()),
                 )}
               >
                 Current DAT/YAML

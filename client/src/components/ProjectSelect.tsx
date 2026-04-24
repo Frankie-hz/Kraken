@@ -32,8 +32,8 @@ function ProjectSelect() {
       </div>
 
       <p class="muted-note">
-        Point this to the folder where your readable source files live. Kraken exports YAML there and uses it as the
-        base for DAT regeneration.
+        Point this to your working project folder. Kraken saves editor YAML under `Yaml/ROM...`, generated DATs under
+        `ROM...`, and uses the same base for regeneration workflows.
       </p>
 
       <button onclick={() => promptProjectFolder()}>

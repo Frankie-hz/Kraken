@@ -101,15 +101,6 @@ impl AppStateData {
         Ok(new_ffxi_path)
     }
 
-    pub fn set_local_edit_path(
-        &mut self,
-        local_edit_path: Option<PathBuf>,
-    ) -> Result<Option<PathBuf>, AppError> {
-        self.persistence.local_edit_path = local_edit_path.clone();
-        self.persistence.save(&self.local_data_dir);
-        Ok(local_edit_path)
-    }
-
     pub fn set_project_path(
         &mut self,
         project_path: Option<PathBuf>,

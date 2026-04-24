@@ -272,6 +272,106 @@ button.active {
   gap: 1rem;
 }
 
+.app-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.app-dialog {
+  width: min(32rem, calc(100vw - 2rem));
+  border: 1px solid var(--kraken-border-strong);
+  border-radius: 0.9rem;
+  background:
+    linear-gradient(180deg, rgba(12, 18, 36, 0.98) 0%, rgba(8, 13, 27, 0.98) 100%);
+  box-shadow:
+    0 28px 80px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+}
+
+.app-dialog__header {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 1rem 1.1rem 0.75rem;
+}
+
+.app-dialog__icon {
+  width: 0.82rem;
+  height: 0.82rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+  box-shadow: 0 0 18px currentColor;
+}
+
+.app-dialog__icon.is-info {
+  color: var(--kraken-accent-strong);
+  background: var(--kraken-accent);
+}
+
+.app-dialog__icon.is-warning {
+  color: #ffd98a;
+  background: #f0b754;
+}
+
+.app-dialog__icon.is-error {
+  color: #ff9a9a;
+  background: var(--kraken-danger);
+}
+
+.app-dialog__heading {
+  min-width: 0;
+}
+
+.app-dialog__title {
+  color: var(--kraken-text);
+  font-family: Consolas, "Lucida Console", "Segoe UI", monospace;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.app-dialog__body {
+  padding: 0 1.1rem 1rem;
+  color: var(--kraken-text-dim);
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.app-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.7rem;
+  padding: 0.95rem 1.1rem 1.1rem;
+  border-top: 1px solid rgba(70, 92, 169, 0.16);
+  background: rgba(9, 14, 28, 0.56);
+}
+
+.app-dialog__button {
+  min-width: 5.75rem;
+  padding: 0.58rem 0.8rem;
+  font-size: 0.75rem;
+}
+
+.app-dialog__button.is-secondary {
+  border-color: rgba(147, 163, 238, 0.2);
+  background: rgba(19, 27, 53, 0.86);
+  box-shadow: none;
+}
+
+.app-dialog__button.is-secondary:hover {
+  border-color: rgba(147, 163, 238, 0.42);
+  background: rgba(27, 37, 72, 0.94);
+}
+
 .sidebar-shell {
   position: relative;
   z-index: 1;
@@ -292,6 +392,55 @@ button.active {
   box-shadow:
     inset -1px 0 0 rgba(255, 255, 255, 0.015),
     22px 0 40px rgba(0, 0, 0, 0.18);
+}
+
+.sidebar-shell.is-collapsed {
+  width: 4rem;
+  padding: 0.9rem 0.55rem;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.sidebar-edge-toggle {
+  position: absolute;
+  top: 50%;
+  right: -1px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.95rem;
+  height: 3.2rem;
+  padding: 0;
+  border: 1px solid rgba(70, 92, 169, 0.28);
+  border-left: 0;
+  border-radius: 0 0.6rem 0.6rem 0;
+  background: rgba(8, 13, 27, 0.16);
+  box-shadow: none;
+  color: rgba(233, 239, 255, 0.92);
+  transform: translateY(-50%);
+}
+
+.sidebar-edge-toggle:hover {
+  border-color: rgba(147, 163, 238, 0.46);
+  background: rgba(14, 21, 42, 0.28);
+  transform: translateY(-50%);
+}
+
+.sidebar-edge-toggle__arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 140ms ease;
+}
+
+.sidebar-edge-toggle__arrow svg {
+  width: 0.7rem;
+  height: 0.7rem;
+}
+
+.sidebar-edge-toggle__arrow.is-collapsed {
+  transform: rotate(180deg);
 }
 
 .brand-lockup {
@@ -936,6 +1085,10 @@ button.active {
   .sidebar-shell {
     width: 16.5rem;
   }
+
+  .sidebar-shell.is-collapsed {
+    width: 4rem;
+  }
 }
 
 @media (max-width: 860px) {
@@ -946,6 +1099,16 @@ button.active {
   .sidebar-shell {
     height: auto;
     width: 100%;
+  }
+
+  .sidebar-shell.is-collapsed {
+    width: 100%;
+    padding: 1rem 0.9rem;
+    align-items: stretch;
+  }
+
+  .sidebar-shell.is-collapsed .sidebar-collapse-row {
+    justify-content: flex-end;
   }
 
   .content {

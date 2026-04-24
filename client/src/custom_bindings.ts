@@ -1,4 +1,4 @@
-import { Result } from './bindings'
+import { DatDescriptor, DatLanguage, Result } from './bindings'
 import { invoke as TAURI_INVOKE } from "@tauri-apps/api/core";
 declare global {
     interface Window {
@@ -15,7 +15,116 @@ export async function getZoneModel(zoneId: number) : Promise<Result<any, any>> {
     }
 }
 
+export async function copyItemDatsToProject(lang?: DatLanguage): Promise<Result<string[], any>> {
+    try {
+        return { status: "ok", data: await TAURI_INVOKE("copy_item_dats_to_project", { lang }) };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        else return { status: "error", error: e as any };
+    }
+}
+
+export async function areAllItemDatsMadeInProject(): Promise<Result<boolean, any>> {
+    try {
+        return { status: "ok", data: await TAURI_INVOKE("are_all_item_dats_made_in_project") };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        else return { status: "error", error: e as any };
+    }
+}
+
+export async function resolveDatDescriptorPath(
+    descriptor: DatDescriptor,
+    lang?: DatLanguage,
+): Promise<Result<string, any>> {
+    try {
+        return { status: "ok", data: await TAURI_INVOKE("resolve_dat_descriptor_path", { descriptor, lang }) };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        else return { status: "error", error: e as any };
+    }
+}
+
 export type EntityDiffChoice = "Old" | "New";
+
+export interface ItemEditorRow {
+    row: number;
+    old_id: number | null;
+    new_id: number | null;
+    old_stack_size: number | null;
+    new_stack_size: number | null;
+    old_level: number | null;
+    new_level: number | null;
+    old_item_type: string | null;
+    new_item_type: string | null;
+    old_shield_size: number | null;
+    new_shield_size: number | null;
+    old_max_charges: number | null;
+    new_max_charges: number | null;
+    old_casting_time: number | null;
+    new_casting_time: number | null;
+    old_use_delay: number | null;
+    new_use_delay: number | null;
+    old_reuse_delay: number | null;
+    new_reuse_delay: number | null;
+    old_valid_targets: string[] | null;
+    new_valid_targets: string[] | null;
+    old_slots: string[] | null;
+    new_slots: string[] | null;
+    old_weapon_damage: number | null;
+    new_weapon_damage: number | null;
+    old_weapon_delay: number | null;
+    new_weapon_delay: number | null;
+    old_weapon_dps: number | null;
+    new_weapon_dps: number | null;
+    old_weapon_skill_type: string | null;
+    new_weapon_skill_type: string | null;
+    old_weapon_jug_size: number | null;
+    new_weapon_jug_size: number | null;
+    old_weapon_emote: number | null;
+    new_weapon_emote: number | null;
+    old_flags: string[] | null;
+    new_flags: string[] | null;
+    old_jobs: string[] | null;
+    new_jobs: string[] | null;
+    old_en_name: string | null;
+    new_en_name: string | null;
+    old_en_article_type: string | null;
+    new_en_article_type: string | null;
+    old_en_singular_name: string | null;
+    new_en_singular_name: string | null;
+    old_en_plural_name: string | null;
+    new_en_plural_name: string | null;
+    old_en_description: string | null;
+    new_en_description: string | null;
+    old_jp_name: string | null;
+    new_jp_name: string | null;
+    old_jp_description: string | null;
+    new_jp_description: string | null;
+    has_japanese: boolean;
+}
+
+export interface ItemEditorLoadResult {
+    english_source_path: string;
+    japanese_source_path: string | null;
+    english_output_yaml_path: string;
+    english_output_dat_path: string;
+    japanese_output_yaml_path: string | null;
+    japanese_output_dat_path: string | null;
+    rows: ItemEditorRow[];
+}
+
+export interface ItemEditorSaveResult {
+    written_count: number;
+    saved_english: boolean;
+    saved_japanese: boolean;
+    english_out_yaml_path: string;
+    english_out_dat_path: string | null;
+    japanese_out_yaml_path: string | null;
+    japanese_out_dat_path: string | null;
+}
+
+export type ItemEditorSaveTarget = "both" | "english" | "japanese";
 
 export interface EntityDiffRow {
     row: number;
@@ -104,6 +213,15 @@ export async function compareEntityNameFiles(oldPath: string, newPath: string): 
     }
 }
 
+export async function loadItemEditorData(descriptor: DatDescriptor): Promise<Result<ItemEditorLoadResult, any>> {
+    try {
+        return { status: "ok", data: await TAURI_INVOKE("load_item_editor_data", { descriptor }) };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        else return { status: "error", error: e as any };
+    }
+}
+
 export async function compareItemFiles(oldPath: string, newPath: string): Promise<Result<EntityDiffResult, any>> {
     try {
         return { status: "ok", data: await TAURI_INVOKE("compare_item_files", { oldPath, newPath }) };
@@ -146,6 +264,22 @@ export async function saveItemDiff(
         return {
             status: "ok",
             data: await TAURI_INVOKE("save_item_diff", { oldPath, newPath, rows, outYamlPath, outDatPath }),
+        };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        else return { status: "error", error: e as any };
+    }
+}
+
+export async function saveItemEditorData(
+    descriptor: DatDescriptor,
+    rows: ItemEditorRow[],
+    saveTarget: ItemEditorSaveTarget = "both",
+): Promise<Result<ItemEditorSaveResult, any>> {
+    try {
+        return {
+            status: "ok",
+            data: await TAURI_INVOKE("save_item_editor_data", { descriptor, rows, saveTarget }),
         };
     } catch (e) {
         if (e instanceof Error) throw e;

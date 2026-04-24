@@ -1,9 +1,6 @@
 import { useData } from "../store";
 import Updater from "./Updater";
 
-const CUSTOM_DAT_ROOT_HELP =
-  "Used by editor tools as the auto-save base path. YAML files are saved to Custom DAT Root/Yaml/ROM... and DAT files to Custom DAT Root/ROM...";
-
 function Statusbar() {
   const {
     folders: {
@@ -11,11 +8,8 @@ function Statusbar() {
       setDatFolder,
       getProjectFolder,
       setProjectFolder,
-      getLocalEditFolder,
-      setLocalEditFolder,
       promptDatFolder,
       promptProjectFolder,
-      promptLocalEditFolder,
     },
   } = useData();
 
@@ -36,6 +30,7 @@ function Statusbar() {
           >
             {getProjectFolder() ?? "No project folder selected. Click to choose one."}
           </div>
+          <div class="statusbar-note">Editors save YAML to Project/Yaml/ROM... and DATs to Project/ROM...</div>
         </div>
 
         <div class="statusbar-item">
@@ -51,23 +46,6 @@ function Statusbar() {
             }}
           >
             {getDatFolder() ?? "No FFXI folder selected. Click to choose one."}
-          </div>
-        </div>
-
-        <div class="statusbar-item" title={CUSTOM_DAT_ROOT_HELP}>
-          <span class="statusbar-label">Custom DAT Root</span>
-          <div
-            class="statusbar-path"
-            title={CUSTOM_DAT_ROOT_HELP}
-            onclick={(e) => {
-              if (e.ctrlKey) {
-                setLocalEditFolder(null);
-              } else {
-                promptLocalEditFolder();
-              }
-            }}
-          >
-            {getLocalEditFolder() ?? "Optional. Click to choose a DAT output root."}
           </div>
           <div class="statusbar-note">Ctrl+click any path card here to clear it.</div>
         </div>

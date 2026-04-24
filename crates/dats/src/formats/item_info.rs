@@ -179,7 +179,7 @@ pub struct WeaponData {
     dps: u16,
     skill_type: SkillType,
     jug_size: u8,
-    unknown1: u32,
+    emote: u32,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -323,7 +323,7 @@ impl ItemInfo {
                     dps: data_walker.step::<u16>()?,
                     skill_type: SkillType::try_from(data_walker.step::<u8>()?)?,
                     jug_size: data_walker.step::<u8>()?,
-                    unknown1: data_walker.step::<u32>()?,
+                    emote: data_walker.step::<u32>()?,
                 });
             }
 
@@ -490,7 +490,7 @@ impl ItemInfo {
                 walker.write(weapon.dps);
                 walker.write::<u8>(weapon.skill_type.into());
                 walker.write(weapon.jug_size);
-                walker.write(weapon.unknown1);
+                walker.write(weapon.emote);
             }
 
             walker.write(equipment.max_charges);

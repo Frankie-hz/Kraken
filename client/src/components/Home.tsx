@@ -1,6 +1,5 @@
 import ProjectSelect from "./ProjectSelect";
 import FFXISelect from "./FFXISelect";
-import CustomDatRootSelect from "./CustomDatRootSelect";
 import { commands } from "../bindings";
 import { useData } from "../store";
 import { unwrap } from "../util";
@@ -39,23 +38,11 @@ function Home() {
             </button>
           </div>
         </div>
-
-        <div class="hero-panel__aside">
-          <div class="hero-stat">
-            <span class="eyebrow">Session status</span>
-            <strong>{totalProcessingCount() > 0 ? `Processing ${totalProcessingCount()} files` : "Idle and ready"}</strong>
-          </div>
-          <p>
-            Configure your source folders once, then move between string tables, zone content, and diff tooling from
-            the dock on the left.
-          </p>
-        </div>
       </section>
 
       <section class="dashboard-grid">
         <FFXISelect />
         <ProjectSelect />
-        <CustomDatRootSelect />
       </section>
     </div>
   );

@@ -69,6 +69,64 @@ pub struct EntityDiffResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ItemEditorRow {
+    pub row: u32,
+    pub old_id: Option<u32>,
+    pub new_id: Option<u32>,
+    pub old_stack_size: Option<u32>,
+    pub new_stack_size: Option<u32>,
+    pub old_level: Option<u32>,
+    pub new_level: Option<u32>,
+    pub old_item_type: Option<String>,
+    pub new_item_type: Option<String>,
+    pub old_shield_size: Option<u32>,
+    pub new_shield_size: Option<u32>,
+    pub old_max_charges: Option<u32>,
+    pub new_max_charges: Option<u32>,
+    pub old_casting_time: Option<u32>,
+    pub new_casting_time: Option<u32>,
+    pub old_use_delay: Option<u32>,
+    pub new_use_delay: Option<u32>,
+    pub old_reuse_delay: Option<u32>,
+    pub new_reuse_delay: Option<u32>,
+    pub old_valid_targets: Option<Vec<String>>,
+    pub new_valid_targets: Option<Vec<String>>,
+    pub old_slots: Option<Vec<String>>,
+    pub new_slots: Option<Vec<String>>,
+    pub old_weapon_damage: Option<u32>,
+    pub new_weapon_damage: Option<u32>,
+    pub old_weapon_delay: Option<u32>,
+    pub new_weapon_delay: Option<u32>,
+    pub old_weapon_dps: Option<u32>,
+    pub new_weapon_dps: Option<u32>,
+    pub old_weapon_skill_type: Option<String>,
+    pub new_weapon_skill_type: Option<String>,
+    pub old_weapon_jug_size: Option<u32>,
+    pub new_weapon_jug_size: Option<u32>,
+    pub old_weapon_emote: Option<u32>,
+    pub new_weapon_emote: Option<u32>,
+    pub old_flags: Option<Vec<String>>,
+    pub new_flags: Option<Vec<String>>,
+    pub old_jobs: Option<Vec<String>>,
+    pub new_jobs: Option<Vec<String>>,
+    pub old_en_name: Option<String>,
+    pub new_en_name: Option<String>,
+    pub old_en_article_type: Option<String>,
+    pub new_en_article_type: Option<String>,
+    pub old_en_singular_name: Option<String>,
+    pub new_en_singular_name: Option<String>,
+    pub old_en_plural_name: Option<String>,
+    pub new_en_plural_name: Option<String>,
+    pub old_en_description: Option<String>,
+    pub new_en_description: Option<String>,
+    pub old_jp_name: Option<String>,
+    pub new_jp_name: Option<String>,
+    pub old_jp_description: Option<String>,
+    pub new_jp_description: Option<String>,
+    pub has_japanese: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpellDiffRow {
     pub row: u32,
     pub old_index: Option<u32>,
@@ -611,6 +669,229 @@ pub fn save_item_diff(
     })
 }
 
+pub fn load_item_editor_rows(
+    english_path: PathBuf,
+    japanese_path: Option<PathBuf>,
+) -> Result<Vec<ItemEditorRow>> {
+    let english_data = load_item_table(&english_path)?;
+    let japanese_data = japanese_path
+        .as_ref()
+        .map(load_item_table)
+        .transpose()?;
+
+    let row_count = english_data
+        .items
+        .len()
+        .max(japanese_data.as_ref().map(|data| data.items.len()).unwrap_or(0));
+
+    let mut rows = Vec::with_capacity(row_count);
+    for row_idx in 0..row_count {
+        let english_item = english_data.items.get(row_idx);
+        let japanese_item = japanese_data
+            .as_ref()
+            .and_then(|data| data.items.get(row_idx));
+
+        let old_id = english_item
+            .and_then(get_item_id)
+            .or_else(|| japanese_item.and_then(get_item_id));
+        let old_stack_size = english_item
+            .and_then(get_item_stack_size)
+            .or_else(|| japanese_item.and_then(get_item_stack_size));
+        let old_level = english_item
+            .and_then(get_item_level)
+            .or_else(|| japanese_item.and_then(get_item_level));
+        let old_item_type = english_item
+            .and_then(get_item_type)
+            .or_else(|| japanese_item.and_then(get_item_type));
+        let old_shield_size = english_item
+            .and_then(get_item_shield_size)
+            .or_else(|| japanese_item.and_then(get_item_shield_size));
+        let old_max_charges = english_item
+            .and_then(get_item_max_charges)
+            .or_else(|| japanese_item.and_then(get_item_max_charges));
+        let old_casting_time = english_item
+            .and_then(get_item_casting_time)
+            .or_else(|| japanese_item.and_then(get_item_casting_time));
+        let old_use_delay = english_item
+            .and_then(get_item_use_delay)
+            .or_else(|| japanese_item.and_then(get_item_use_delay));
+        let old_reuse_delay = english_item
+            .and_then(get_item_reuse_delay)
+            .or_else(|| japanese_item.and_then(get_item_reuse_delay));
+        let old_valid_targets = english_item
+            .and_then(get_item_valid_targets)
+            .or_else(|| japanese_item.and_then(get_item_valid_targets));
+        let old_slots = english_item
+            .and_then(get_item_slots)
+            .or_else(|| japanese_item.and_then(get_item_slots));
+        let old_weapon_damage = english_item
+            .and_then(get_item_weapon_damage)
+            .or_else(|| japanese_item.and_then(get_item_weapon_damage));
+        let old_weapon_delay = english_item
+            .and_then(get_item_weapon_delay)
+            .or_else(|| japanese_item.and_then(get_item_weapon_delay));
+        let old_weapon_dps = english_item
+            .and_then(get_item_weapon_dps)
+            .or_else(|| japanese_item.and_then(get_item_weapon_dps));
+        let old_weapon_skill_type = english_item
+            .and_then(get_item_weapon_skill_type)
+            .or_else(|| japanese_item.and_then(get_item_weapon_skill_type));
+        let old_weapon_jug_size = english_item
+            .and_then(get_item_weapon_jug_size)
+            .or_else(|| japanese_item.and_then(get_item_weapon_jug_size));
+        let old_weapon_emote = english_item
+            .and_then(get_item_weapon_emote)
+            .or_else(|| japanese_item.and_then(get_item_weapon_emote));
+        let old_flags = english_item
+            .and_then(get_item_flags)
+            .or_else(|| japanese_item.and_then(get_item_flags));
+        let old_jobs = english_item
+            .and_then(get_item_jobs)
+            .or_else(|| japanese_item.and_then(get_item_jobs));
+        let old_en_name = english_item.and_then(get_item_name);
+        let old_en_article_type = english_item
+            .and_then(|item| get_item_string_field(item, "article_type"));
+        let old_en_singular_name = english_item
+            .and_then(|item| get_item_string_field(item, "singular_name"));
+        let old_en_plural_name = english_item
+            .and_then(|item| get_item_string_field(item, "plural_name"));
+        let old_en_description = english_item.and_then(get_item_description);
+        let old_jp_name = japanese_item.and_then(get_item_name);
+        let old_jp_description = japanese_item.and_then(get_item_description);
+
+        rows.push(ItemEditorRow {
+            row: row_idx as u32,
+            old_id,
+            new_id: old_id,
+            old_stack_size,
+            new_stack_size: old_stack_size,
+            old_level,
+            new_level: old_level,
+            old_item_type: old_item_type.clone(),
+            new_item_type: old_item_type,
+            old_shield_size,
+            new_shield_size: old_shield_size,
+            old_max_charges,
+            new_max_charges: old_max_charges,
+            old_casting_time,
+            new_casting_time: old_casting_time,
+            old_use_delay,
+            new_use_delay: old_use_delay,
+            old_reuse_delay,
+            new_reuse_delay: old_reuse_delay,
+            old_valid_targets: old_valid_targets.clone(),
+            new_valid_targets: old_valid_targets,
+            old_slots: old_slots.clone(),
+            new_slots: old_slots,
+            old_weapon_damage,
+            new_weapon_damage: old_weapon_damage,
+            old_weapon_delay,
+            new_weapon_delay: old_weapon_delay,
+            old_weapon_dps,
+            new_weapon_dps: old_weapon_dps,
+            old_weapon_skill_type: old_weapon_skill_type.clone(),
+            new_weapon_skill_type: old_weapon_skill_type,
+            old_weapon_jug_size,
+            new_weapon_jug_size: old_weapon_jug_size,
+            old_weapon_emote,
+            new_weapon_emote: old_weapon_emote,
+            old_flags: old_flags.clone(),
+            new_flags: old_flags,
+            old_jobs: old_jobs.clone(),
+            new_jobs: old_jobs,
+            old_en_name: old_en_name.clone(),
+            new_en_name: old_en_name,
+            old_en_article_type: old_en_article_type.clone(),
+            new_en_article_type: old_en_article_type,
+            old_en_singular_name: old_en_singular_name.clone(),
+            new_en_singular_name: old_en_singular_name,
+            old_en_plural_name: old_en_plural_name.clone(),
+            new_en_plural_name: old_en_plural_name,
+            old_en_description: old_en_description.clone(),
+            new_en_description: old_en_description,
+            old_jp_name: old_jp_name.clone(),
+            new_jp_name: old_jp_name,
+            old_jp_description: old_jp_description.clone(),
+            new_jp_description: old_jp_description,
+            has_japanese: japanese_item.is_some(),
+        });
+    }
+
+    Ok(rows)
+}
+
+pub fn save_item_editor_rows(
+    english_source_path: PathBuf,
+    japanese_source_path: Option<PathBuf>,
+    rows: Vec<ItemEditorRow>,
+    save_english: bool,
+    save_japanese: bool,
+    english_out_yaml_path: PathBuf,
+    english_out_dat_path: Option<PathBuf>,
+    japanese_out_yaml_path: Option<PathBuf>,
+    japanese_out_dat_path: Option<PathBuf>,
+) -> Result<usize> {
+    let mut english_data = if save_english {
+        Some(load_item_table(&english_source_path)?)
+    } else {
+        None
+    };
+    let mut japanese_data = if save_japanese {
+        japanese_source_path
+            .as_ref()
+            .map(load_item_table)
+            .transpose()?
+    } else {
+        None
+    };
+
+    for row in &rows {
+        let row_idx = row.row as usize;
+
+        if let Some(english_items) = english_data.as_mut() {
+            let Some(english_item) = english_items.items.get_mut(row_idx) else {
+                return Err(anyhow::anyhow!(
+                    "English item row {} is out of range for {:?}.",
+                    row.row,
+                    english_source_path
+                ));
+            };
+
+            apply_common_item_editor_updates(english_item, row);
+            apply_english_item_editor_updates(english_item, row);
+        }
+
+        if let Some(japanese_items) = japanese_data.as_mut() {
+            let Some(japanese_item) = japanese_items.items.get_mut(row_idx) else {
+                return Err(anyhow::anyhow!(
+                    "Japanese item row {} is out of range for {:?}.",
+                    row.row,
+                    japanese_source_path
+                ));
+            };
+
+            apply_common_item_editor_updates(japanese_item, row);
+            apply_japanese_item_editor_updates(japanese_item, row);
+        }
+    }
+
+    if let Some(english_items) = english_data.as_ref() {
+        write_item_table(english_items, english_out_yaml_path, english_out_dat_path)?;
+    }
+
+    if let Some(japanese_items) = japanese_data.as_ref() {
+        if let Some(japanese_yaml_path) = japanese_out_yaml_path {
+            write_item_table(japanese_items, japanese_yaml_path, japanese_out_dat_path)?;
+        }
+    }
+
+    Ok(english_data
+        .as_ref()
+        .map(|items| items.items.len())
+        .or_else(|| japanese_data.as_ref().map(|items| items.items.len()))
+        .unwrap_or(0))
+}
+
 pub fn compare_spell_files(old_path: PathBuf, new_path: PathBuf) -> Result<SpellDiffResult> {
     let old_data = load_spell_table(&old_path)?;
     let new_data = load_spell_table(&new_path)?;
@@ -1011,34 +1292,11 @@ fn set_item_id(item: &mut Value, id: u32) -> bool {
 }
 
 fn get_item_name(item: &Value) -> Option<String> {
-    let mapping = item.as_mapping()?;
-    let strings_key = Value::String("strings".to_string());
-    let strings_value = mapping.get(&strings_key)?;
-    let strings_mapping = strings_value.as_mapping()?;
-    let name_key = Value::String("name".to_string());
-    let name_value = strings_mapping.get(&name_key)?;
-    name_value.as_str().map(|name| name.to_string())
+    get_item_string_field(item, "name")
 }
 
 fn set_item_name(item: &mut Value, name: String) -> bool {
-    let Some(mapping) = item.as_mapping_mut() else {
-        return false;
-    };
-
-    let strings_key = Value::String("strings".to_string());
-    let name_key = Value::String("name".to_string());
-
-    if let Some(strings_value) = mapping.get_mut(&strings_key) {
-        if let Some(strings_mapping) = strings_value.as_mapping_mut() {
-            strings_mapping.insert(name_key, Value::String(name));
-            return true;
-        }
-    }
-
-    let mut strings_mapping = Mapping::new();
-    strings_mapping.insert(name_key, Value::String(name));
-    mapping.insert(strings_key, Value::Mapping(strings_mapping));
-    true
+    set_item_string_field(item, "name", name)
 }
 
 fn get_item_stack_size(item: &Value) -> Option<u32> {
@@ -1059,34 +1317,220 @@ fn set_item_stack_size(item: &mut Value, stack_size: u32) -> bool {
     true
 }
 
+fn get_equipment_u32_field(item: &Value, field: &str) -> Option<u32> {
+    let mapping = item.as_mapping()?;
+    let equipment = mapping.get(Value::String("equipment".to_string()))?.as_mapping()?;
+    let value = equipment.get(Value::String(field.to_string()))?;
+    u32::try_from(value.as_u64()?).ok()
+}
+
+fn set_equipment_u32_field(item: &mut Value, field: &str, value: u32) -> bool {
+    let Some(mapping) = item.as_mapping_mut() else {
+        return false;
+    };
+
+    let Some(equipment) = mapping.get_mut(Value::String("equipment".to_string())) else {
+        return false;
+    };
+    let Some(equipment_mapping) = equipment.as_mapping_mut() else {
+        return false;
+    };
+
+    equipment_mapping.insert(Value::String(field.to_string()), Value::Number(value.into()));
+    true
+}
+
+fn get_item_level(item: &Value) -> Option<u32> {
+    get_equipment_u32_field(item, "level")
+}
+
+fn get_item_type(item: &Value) -> Option<String> {
+    let mapping = item.as_mapping()?;
+    let value = mapping.get(Value::String("item_type".to_string()))?;
+    value.as_str().map(|value| value.to_string())
+}
+
+fn set_item_type(item: &mut Value, item_type: String) -> bool {
+    let Some(mapping) = item.as_mapping_mut() else {
+        return false;
+    };
+
+    mapping.insert(
+        Value::String("item_type".to_string()),
+        Value::String(item_type),
+    );
+    true
+}
+
+fn get_item_valid_targets(item: &Value) -> Option<Vec<String>> {
+    let mapping = item.as_mapping()?;
+    let targets = mapping.get(Value::String("valid_targets".to_string()))?;
+    value_string_list(targets)
+}
+
+fn set_item_valid_targets(item: &mut Value, valid_targets: &[String]) -> bool {
+    let Some(mapping) = item.as_mapping_mut() else {
+        return false;
+    };
+
+    mapping.insert(
+        Value::String("valid_targets".to_string()),
+        string_list_value(valid_targets),
+    );
+    true
+}
+
+fn get_item_slots(item: &Value) -> Option<Vec<String>> {
+    let mapping = item.as_mapping()?;
+    let equipment = mapping.get(Value::String("equipment".to_string()))?;
+    let equipment_mapping = equipment.as_mapping()?;
+    let slots = equipment_mapping.get(Value::String("slots".to_string()))?;
+    value_string_list(slots)
+}
+
+fn set_item_slots(item: &mut Value, slots: &[String]) -> bool {
+    let Some(mapping) = item.as_mapping_mut() else {
+        return false;
+    };
+    let Some(equipment) = mapping.get_mut(Value::String("equipment".to_string())) else {
+        return false;
+    };
+    let Some(equipment_mapping) = equipment.as_mapping_mut() else {
+        return false;
+    };
+
+    equipment_mapping.insert(
+        Value::String("slots".to_string()),
+        string_list_value(slots),
+    );
+    true
+}
+
+fn get_weapon_u32_field(item: &Value, field: &str) -> Option<u32> {
+    let mapping = item.as_mapping()?;
+    let weapon = mapping.get(Value::String("weapon".to_string()))?;
+    let weapon_mapping = weapon.as_mapping()?;
+    let value = weapon_mapping.get(Value::String(field.to_string()))?;
+    value.as_u64().and_then(|value| u32::try_from(value).ok())
+}
+
+fn set_weapon_u32_field(item: &mut Value, field: &str, value: u32) -> bool {
+    let Some(mapping) = item.as_mapping_mut() else {
+        return false;
+    };
+    let Some(weapon) = mapping.get_mut(Value::String("weapon".to_string())) else {
+        return false;
+    };
+    let Some(weapon_mapping) = weapon.as_mapping_mut() else {
+        return false;
+    };
+
+    weapon_mapping.insert(Value::String(field.to_string()), Value::Number(value.into()));
+    true
+}
+
+fn get_item_weapon_damage(item: &Value) -> Option<u32> {
+    get_weapon_u32_field(item, "damage")
+}
+
+fn get_item_weapon_delay(item: &Value) -> Option<u32> {
+    get_weapon_u32_field(item, "delay")
+}
+
+fn get_item_weapon_dps(item: &Value) -> Option<u32> {
+    get_weapon_u32_field(item, "dps")
+}
+
+fn get_item_weapon_skill_type(item: &Value) -> Option<String> {
+    let mapping = item.as_mapping()?;
+    let weapon = mapping.get(Value::String("weapon".to_string()))?;
+    let weapon_mapping = weapon.as_mapping()?;
+    let value = weapon_mapping.get(Value::String("skill_type".to_string()))?;
+    value.as_str().map(|value| value.to_string())
+}
+
+fn set_item_weapon_skill_type(item: &mut Value, skill_type: String) -> bool {
+    let Some(mapping) = item.as_mapping_mut() else {
+        return false;
+    };
+    let Some(weapon) = mapping.get_mut(Value::String("weapon".to_string())) else {
+        return false;
+    };
+    let Some(weapon_mapping) = weapon.as_mapping_mut() else {
+        return false;
+    };
+
+    weapon_mapping.insert(
+        Value::String("skill_type".to_string()),
+        Value::String(skill_type),
+    );
+    true
+}
+
+fn get_item_weapon_jug_size(item: &Value) -> Option<u32> {
+    get_weapon_u32_field(item, "jug_size")
+}
+
+fn get_item_weapon_emote(item: &Value) -> Option<u32> {
+    get_weapon_u32_field(item, "emote")
+}
+
+fn get_item_shield_size(item: &Value) -> Option<u32> {
+    get_equipment_u32_field(item, "shield_size")
+}
+
+fn get_item_max_charges(item: &Value) -> Option<u32> {
+    get_equipment_u32_field(item, "max_charges")
+}
+
+fn get_item_casting_time(item: &Value) -> Option<u32> {
+    get_equipment_u32_field(item, "casting_time")
+}
+
+fn get_item_use_delay(item: &Value) -> Option<u32> {
+    get_equipment_u32_field(item, "use_delay")
+}
+
+fn get_item_reuse_delay(item: &Value) -> Option<u32> {
+    get_equipment_u32_field(item, "reuse_delay")
+}
+
 fn get_item_description(item: &Value) -> Option<String> {
+    get_item_string_field(item, "description")
+}
+
+fn set_item_description(item: &mut Value, description: String) -> bool {
+    set_item_string_field(item, "description", description)
+}
+
+fn get_item_string_field(item: &Value, field: &str) -> Option<String> {
     let mapping = item.as_mapping()?;
     let strings_key = Value::String("strings".to_string());
     let strings_value = mapping.get(&strings_key)?;
     let strings_mapping = strings_value.as_mapping()?;
-    let description_key = Value::String("description".to_string());
-    let description_value = strings_mapping.get(&description_key)?;
-    description_value
-        .as_str()
-        .map(|description| description.to_string())
+    let value_key = Value::String(field.to_string());
+    let value = strings_mapping.get(&value_key)?;
+    value.as_str().map(|value| value.to_string())
 }
 
-fn set_item_description(item: &mut Value, description: String) -> bool {
+fn set_item_string_field(item: &mut Value, field: &str, value: String) -> bool {
     let Some(mapping) = item.as_mapping_mut() else {
         return false;
     };
 
     let strings_key = Value::String("strings".to_string());
-    let description_key = Value::String("description".to_string());
+    let value_key = Value::String(field.to_string());
 
-    let Some(strings_value) = mapping.get_mut(&strings_key) else {
-        return false;
-    };
-    let Some(strings_mapping) = strings_value.as_mapping_mut() else {
-        return false;
-    };
+    if let Some(strings_value) = mapping.get_mut(&strings_key) {
+        if let Some(strings_mapping) = strings_value.as_mapping_mut() {
+            strings_mapping.insert(value_key, Value::String(value));
+            return true;
+        }
+    }
 
-    strings_mapping.insert(description_key, Value::String(description));
+    let mut strings_mapping = Mapping::new();
+    strings_mapping.insert(value_key, Value::String(value));
+    mapping.insert(strings_key, Value::Mapping(strings_mapping));
     true
 }
 
@@ -1158,6 +1602,144 @@ fn set_item_jobs(item: &mut Value, jobs: &[String]) -> bool {
 
     equipment_mapping.insert(jobs_key, string_list_value(jobs));
     true
+}
+
+fn apply_common_item_editor_updates(item: &mut Value, row: &ItemEditorRow) {
+    if let Some(id) = row.new_id {
+        set_item_id(item, id);
+    }
+
+    if let Some(stack_size) = row.new_stack_size {
+        set_item_stack_size(item, stack_size);
+    }
+
+    if let Some(level) = row.new_level {
+        set_equipment_u32_field(item, "level", level);
+    }
+
+    if let Some(item_type) = row.new_item_type.clone() {
+        set_item_type(item, item_type);
+    }
+
+    if let Some(shield_size) = row.new_shield_size {
+        set_equipment_u32_field(item, "shield_size", shield_size);
+    }
+
+    if let Some(max_charges) = row.new_max_charges {
+        set_equipment_u32_field(item, "max_charges", max_charges);
+    }
+
+    if let Some(casting_time) = row.new_casting_time {
+        set_equipment_u32_field(item, "casting_time", casting_time);
+    }
+
+    if let Some(use_delay) = row.new_use_delay {
+        set_equipment_u32_field(item, "use_delay", use_delay);
+    }
+
+    if let Some(reuse_delay) = row.new_reuse_delay {
+        set_equipment_u32_field(item, "reuse_delay", reuse_delay);
+    }
+
+    if let Some(valid_targets) = row.new_valid_targets.as_ref() {
+        set_item_valid_targets(item, valid_targets);
+    }
+
+    if let Some(slots) = row.new_slots.as_ref() {
+        set_item_slots(item, slots);
+    }
+
+    if let Some(damage) = row.new_weapon_damage {
+        set_weapon_u32_field(item, "damage", damage);
+    }
+
+    if let Some(delay) = row.new_weapon_delay {
+        set_weapon_u32_field(item, "delay", delay);
+    }
+
+    if let Some(dps) = row.new_weapon_dps {
+        set_weapon_u32_field(item, "dps", dps);
+    }
+
+    if let Some(skill_type) = row.new_weapon_skill_type.clone() {
+        set_item_weapon_skill_type(item, skill_type);
+    }
+
+    if let Some(jug_size) = row.new_weapon_jug_size {
+        set_weapon_u32_field(item, "jug_size", jug_size);
+    }
+
+    if let Some(emote) = row.new_weapon_emote {
+        set_weapon_u32_field(item, "emote", emote);
+    }
+
+    if let Some(flags) = row.new_flags.as_ref() {
+        set_item_flags(item, flags);
+    }
+
+    if let Some(jobs) = row.new_jobs.as_ref() {
+        set_item_jobs(item, jobs);
+    }
+}
+
+fn apply_english_item_editor_updates(item: &mut Value, row: &ItemEditorRow) {
+    if let Some(name) = row.new_en_name.clone() {
+        set_item_name(item, name);
+    }
+
+    if let Some(article_type) = row.new_en_article_type.clone() {
+        set_item_string_field(item, "article_type", article_type);
+    }
+
+    if let Some(singular_name) = row.new_en_singular_name.clone() {
+        set_item_string_field(item, "singular_name", singular_name);
+    }
+
+    if let Some(plural_name) = row.new_en_plural_name.clone() {
+        set_item_string_field(item, "plural_name", plural_name);
+    }
+
+    if let Some(description) = row.new_en_description.clone() {
+        set_item_description(item, description);
+    }
+}
+
+fn apply_japanese_item_editor_updates(item: &mut Value, row: &ItemEditorRow) {
+    if let Some(name) = row.new_jp_name.clone() {
+        set_item_name(item, name);
+    }
+
+    if let Some(description) = row.new_jp_description.clone() {
+        set_item_description(item, description);
+    }
+}
+
+fn write_item_table(
+    table: &ItemInfoTableYaml,
+    out_yaml_path: PathBuf,
+    out_dat_path: Option<PathBuf>,
+) -> Result<()> {
+    if let Some(parent) = out_yaml_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let yaml_file = File::create(&out_yaml_path)?;
+    serde_yaml::to_writer(BufWriter::new(yaml_file), table)?;
+
+    if let Some(dat_path) = out_dat_path {
+        if let Some(parent) = dat_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let value = serde_yaml::to_value(table)?;
+        let dat: ItemInfoTable = serde_yaml::from_value(value)?;
+        let bytes = dat.to_bytes()?;
+        ItemInfoTable::from_bytes(&bytes)
+            .map_err(|err| anyhow::anyhow!("Generated item DAT failed verification: {err}"))?;
+        fs::write(&dat_path, bytes)?;
+    }
+
+    Ok(())
 }
 
 fn get_spell_entries(root: &Value) -> Result<&Vec<Value>> {

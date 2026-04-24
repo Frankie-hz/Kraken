@@ -1,6 +1,6 @@
-import { message, open } from "@tauri-apps/plugin-dialog";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useSearchParams } from "@solidjs/router";
-import { For, Show, batch, createEffect, createMemo, createSignal, onMount } from "solid-js";
+import { For, Show, batch, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import {
   EntityDiffChoice,
@@ -8,6 +8,7 @@ import {
   compareEntityNameFiles,
   saveEntityNameDiff,
 } from "../custom_bindings";
+import { showMessage } from "../dialogs";
 import { useData } from "../store";
 import { unwrap } from "../util";
 
@@ -76,19 +77,19 @@ function getRomRelativePath(path: string): string | null {
   return relative || null;
 }
 
-function getCustomOutputRoot(localEditRoot: string | null): string | null {
-  if (!localEditRoot) {
+function getOutputRoot(projectRoot: string | null): string | null {
+  if (!projectRoot) {
     return null;
   }
 
-  return localEditRoot.replaceAll("\\", "/").replace(/\/+$/, "");
+  return projectRoot.replaceAll("\\", "/").replace(/\/+$/, "");
 }
 
 function buildAutoSavePaths(
   sourcePath: string,
-  localEditRoot: string | null,
+  projectRoot: string | null,
 ): { yamlPath: string; datPath: string } | null {
-  const outputRoot = getCustomOutputRoot(localEditRoot);
+  const outputRoot = getOutputRoot(projectRoot);
   if (!outputRoot) {
     return null;
   }
@@ -123,7 +124,7 @@ const VIRTUAL_OVERSCAN_ROWS = 16;
 interface EntityDiffCachedState {
   edited_path: string;
   new_retail_path: string;
-  rows: EntityDiffRow[];
+  rows?: EntityDiffRow[];
   old_count: number;
   new_count: number;
   changed_count: number;
@@ -209,9 +210,21 @@ function rowMatchesFilter(row: EntityDiffRow, filterText: string) {
   return haystack.includes(filterText);
 }
 
+function buildRowIndexById(rows: EntityDiffRow[]) {
+  const indexById = new Map<number, number>();
+  rows.forEach((row, index) => {
+    indexById.set(row.row, index);
+  });
+  return indexById;
+}
+
+function buildChangedRowIdSet(rows: EntityDiffRow[]) {
+  return new Set(rows.filter((row) => isChangedRow(row)).map((row) => row.row));
+}
+
 function EntityDiffTool() {
   const {
-    folders: { getDatFolder, getLocalEditFolder },
+    folders: { getDatFolder, getProjectFolder },
   } = useData();
   const [searchParams] = useSearchParams();
   const cachedState = loadCachedState();
@@ -220,6 +233,8 @@ function EntityDiffTool() {
   const [newRetailPath, setNewRetailPath] = createSignal(cachedState?.new_retail_path ?? "");
 
   const [rows, setRows] = createStore<EntityDiffRow[]>(cachedState?.rows ?? []);
+  const [rowIndexById, setRowIndexById] = createSignal<Map<number, number>>(buildRowIndexById(cachedState?.rows ?? []));
+  const [changedRowIds, setChangedRowIds] = createSignal<Set<number>>(buildChangedRowIdSet(cachedState?.rows ?? []));
   const [oldCount, setOldCount] = createSignal(cachedState?.old_count ?? 0);
   const [newCount, setNewCount] = createSignal(cachedState?.new_count ?? 0);
   const [changedCount, setChangedCount] = createSignal(cachedState?.changed_count ?? 0);
@@ -233,19 +248,31 @@ function EntityDiffTool() {
   const [lastNotice, setLastNotice] = createSignal(cachedState?.last_notice ?? "");
   const [lastSavedYamlPath, setLastSavedYamlPath] = createSignal(cachedState?.last_saved_yaml_path ?? "");
   const [lastSavedDatPath, setLastSavedDatPath] = createSignal(cachedState?.last_saved_dat_path ?? "");
+  const [rowsVersion, setRowsVersion] = createSignal(0);
   const [scrollTop, setScrollTop] = createSignal(0);
   const [tableViewportHeight, setTableViewportHeight] = createSignal(480);
 
   let tableContainerRef: HTMLDivElement | undefined;
   let scrollFrame = 0;
+  let persistStateTimer: number | undefined;
 
   const changedRowsSelectedOld = createMemo(() => {
-    return rows.filter((row) => isChangedRow(row) && row.choice === "Old").length;
+    const changed = changedRowIds();
+    const indexById = rowIndexById();
+    let count = 0;
+    for (const rowId of changed) {
+      const index = indexById.get(rowId);
+      if (index !== undefined && rows[index]?.choice === "Old") {
+        count += 1;
+      }
+    }
+    return count;
   });
 
   const displayedRows = createMemo(() => {
     const filterText = tableFilter().trim().toLowerCase();
-    const baseRows = showChangedOnly() ? rows.filter((row) => isChangedRow(row)) : rows;
+    const changed = changedRowIds();
+    const baseRows = showChangedOnly() ? rows.filter((row) => changed.has(row.row)) : rows;
     if (!filterText) {
       return baseRows;
     }
@@ -276,9 +303,12 @@ function EntityDiffTool() {
 
   const resetLoadedRows = () => {
     setRows([]);
+    setRowIndexById(new Map());
+    setChangedRowIds(new Set());
     setOldCount(0);
     setNewCount(0);
     setChangedCount(0);
+    setRowsVersion((version) => version + 1);
   };
 
   const setEditedFile = (path: string) => {
@@ -334,22 +364,51 @@ function EntityDiffTool() {
       return;
     }
 
-    const stateToSave: EntityDiffCachedState = {
-      edited_path: editedPath(),
-      new_retail_path: newRetailPath(),
-      rows: rows.map((row) => ({ ...row })),
-      old_count: oldCount(),
-      new_count: newCount(),
-      changed_count: changedCount(),
-      show_changed_only: showChangedOnly(),
-      table_filter: tableFilter(),
-      manual_edit: manualEdit(),
-      last_notice: lastNotice(),
-      last_saved_yaml_path: lastSavedYamlPath(),
-      last_saved_dat_path: lastSavedDatPath(),
-    };
+    editedPath();
+    newRetailPath();
+    rowsVersion();
+    oldCount();
+    newCount();
+    changedCount();
+    showChangedOnly();
+    tableFilter();
+    manualEdit();
+    lastNotice();
+    lastSavedYamlPath();
+    lastSavedDatPath();
 
-    window.sessionStorage.setItem(ENTITY_DIFF_STATE_KEY, JSON.stringify(stateToSave));
+    if (persistStateTimer !== undefined) {
+      window.clearTimeout(persistStateTimer);
+    }
+
+    persistStateTimer = window.setTimeout(() => {
+      const stateToSave: EntityDiffCachedState = {
+        edited_path: editedPath(),
+        new_retail_path: newRetailPath(),
+        old_count: oldCount(),
+        new_count: newCount(),
+        changed_count: changedCount(),
+        show_changed_only: showChangedOnly(),
+        table_filter: tableFilter(),
+        manual_edit: manualEdit(),
+        last_notice: lastNotice(),
+        last_saved_yaml_path: lastSavedYamlPath(),
+        last_saved_dat_path: lastSavedDatPath(),
+      };
+
+      try {
+        window.sessionStorage.setItem(ENTITY_DIFF_STATE_KEY, JSON.stringify(stateToSave));
+      } catch (error) {
+        console.warn("Failed to persist entity diff UI state.", error);
+      }
+      persistStateTimer = undefined;
+    }, 250);
+  });
+
+  onCleanup(() => {
+    if (persistStateTimer !== undefined) {
+      window.clearTimeout(persistStateTimer);
+    }
   });
 
   const syncTableViewport = () => {
@@ -377,6 +436,10 @@ function EntityDiffTool() {
 
     const handleResize = () => syncTableViewport();
     window.addEventListener("resize", handleResize);
+
+    if (rows.length === 0 && editedPath() && newRetailPath()) {
+      void runCompare();
+    }
 
     return () => {
       if (scrollFrame !== 0) {
@@ -406,7 +469,7 @@ function EntityDiffTool() {
 
   const runCompare = async () => {
     if (!editedPath() || !newRetailPath()) {
-      await message("Select edited and new retail files first.");
+      await showMessage("Select edited and new retail files first.", { title: "Compare Required", kind: "warning" });
       return;
     }
 
@@ -414,34 +477,72 @@ function EntityDiffTool() {
     try {
       const result = unwrap(await compareEntityNameFiles(editedPath(), newRetailPath()));
       batch(() => {
-        setRows(() =>
-          result.rows.map((row) => ({
-            ...row,
-            choice: defaultChoiceForRow(row),
-            target_id: row.target_id ?? defaultTargetForRow(row),
-          })),
-        );
+        const preparedRows = result.rows.map((row) => ({
+          ...row,
+          choice: defaultChoiceForRow(row),
+          target_id: row.target_id ?? defaultTargetForRow(row),
+        }));
+        setRows(() => preparedRows);
+        setRowIndexById(buildRowIndexById(preparedRows));
+        setChangedRowIds(buildChangedRowIdSet(preparedRows));
         setOldCount(result.old_count);
         setNewCount(result.new_count);
         setChangedCount(result.changed_count);
         setLastNotice(`Loaded ${result.changed_count} changed row(s).`);
+        setRowsVersion((version) => version + 1);
       });
     } catch (err) {
-      await message(`${err}`);
+      await showMessage(`${err}`, { title: "Compare Error", kind: "error" });
     } finally {
       setComparing(false);
     }
   };
 
-  const setRowChoice = (rowIndex: number, choice: EntityDiffChoice) => {
-    setRows(rowIndex, "choice", choice);
+  const updateRowById = (rowId: number, updater: (row: EntityDiffRow) => void) => {
+    const index = rowIndexById().get(rowId);
+    if (index === undefined) {
+      return;
+    }
+
+    const currentRow = rows[index];
+    if (!currentRow) {
+      return;
+    }
+
+    const nextRow = { ...currentRow };
+    updater(nextRow);
+
+    const wasChanged = isChangedRow(currentRow);
+    const isNowChanged = isChangedRow(nextRow);
+
+    setRows(index, nextRow);
+    if (wasChanged !== isNowChanged) {
+      setChangedRowIds((current) => {
+        const next = new Set(current);
+        if (isNowChanged) {
+          next.add(rowId);
+        } else {
+          next.delete(rowId);
+        }
+        return next;
+      });
+    }
+    setRowsVersion((version) => version + 1);
   };
 
-  const setRowTargetId = (rowIndex: number, targetId: number | null) => {
-    setRows(rowIndex, "target_id", targetId);
+  const setRowChoice = (rowId: number, choice: EntityDiffChoice) => {
+    updateRowById(rowId, (row) => {
+      row.choice = choice;
+    });
   };
 
-  const setRowNewId = (rowIndex: number, value: string) => {
+  const setRowTargetId = (rowId: number, targetId: number | null) => {
+    updateRowById(rowId, (row) => {
+      row.target_id = targetId;
+    });
+  };
+
+  const setRowNewId = (rowId: number, value: string) => {
     const trimmed = value.trim();
     if (!trimmed) {
       return;
@@ -457,18 +558,21 @@ function EntityDiffTool() {
       return;
     }
 
-    const previousNewId = rows[rowIndex]?.new_id ?? null;
-    const previousTargetId = rows[rowIndex]?.target_id ?? null;
+    updateRowById(rowId, (row) => {
+      const previousNewId = row.new_id ?? null;
+      const previousTargetId = row.target_id ?? null;
 
-    setRows(rowIndex, "new_id", newId);
-
-    if (previousTargetId === null || previousTargetId === previousNewId) {
-      setRows(rowIndex, "target_id", newId);
-    }
+      row.new_id = newId;
+      if (previousTargetId === null || previousTargetId === previousNewId) {
+        row.target_id = newId;
+      }
+    });
   };
 
-  const setRowNewName = (rowIndex: number, value: string) => {
-    setRows(rowIndex, "new_name", value);
+  const setRowNewName = (rowId: number, value: string) => {
+    updateRowById(rowId, (row) => {
+      row.new_name = value;
+    });
   };
 
   const applyBulkChoice = (choice: EntityDiffChoice, onlyChanged: boolean) => {
@@ -489,6 +593,7 @@ function EntityDiffTool() {
         }
       }
     }));
+    setRowsVersion((version) => version + 1);
   };
 
   const keepAllNewIds = () => {
@@ -499,24 +604,26 @@ function EntityDiffTool() {
         }
       }
     }));
+    setRowsVersion((version) => version + 1);
   };
 
   const saveMerged = async () => {
     if (rows.length === 0) {
-      await message("Compare files first so there is something to save.");
+      await showMessage("Compare files first so there is something to save.", { title: "Nothing To Save", kind: "warning" });
       return;
     }
 
     if (!editedPath() || !newRetailPath()) {
-      await message("Select edited and new retail files first.");
+      await showMessage("Select edited and new retail files first.", { title: "Save Blocked", kind: "warning" });
       return;
     }
 
     const sourcePath = editedPath();
-    const autoPaths = buildAutoSavePaths(sourcePath, getLocalEditFolder());
+    const autoPaths = buildAutoSavePaths(sourcePath, getProjectFolder());
     if (!autoPaths) {
-      await message(
-        "Set Custom DAT Root and use files under a ROM path (for example ROM/2/13.DAT) so save can be auto-routed.",
+      await showMessage(
+        "Set Project Folder and use files under a ROM path (for example ROM/2/13.DAT) so save can be auto-routed.",
+        { title: "Project Folder Required", kind: "warning" },
       );
       return;
     }
@@ -528,7 +635,7 @@ function EntityDiffTool() {
       normalizePathForCompare(outYamlPath) === normalizedRetailPath ||
       (!!outDatPath && normalizePathForCompare(outDatPath) === normalizedRetailPath);
     if (writesToRetailFile) {
-      await message("Refusing to save: output path resolves to the selected New Retail file.");
+      await showMessage("Refusing to save: output path resolves to the selected New Retail file.", { title: "Save Blocked", kind: "error" });
       return;
     }
 
@@ -542,11 +649,12 @@ function EntityDiffTool() {
       setLastSavedYamlPath(result.out_yaml_path);
       setLastSavedDatPath(result.out_dat_path ?? "");
       setLastNotice(`Saved ${result.written_count} entries.`);
-      await message(
+      await showMessage(
         `Saved ${result.written_count} entries.\nYAML: ${result.out_yaml_path}${result.out_dat_path ? `\nDAT: ${result.out_dat_path}` : ""}`,
+        { title: "Saved", kind: "info" },
       );
     } catch (err) {
-      await message(`${err}`);
+      await showMessage(`${err}`, { title: "Save Error", kind: "error" });
     } finally {
       setSaving(false);
     }
@@ -561,7 +669,7 @@ function EntityDiffTool() {
         <div class="flex flex-row gap-2 items-center">
           <button
             class={compactButtonClass()}
-            onclick={() => pickFile(setEditedFile, pickerDefaultPath(editedPath(), getLocalEditFolder()))}
+            onclick={() => pickFile(setEditedFile, pickerDefaultPath(editedPath(), getProjectFolder()))}
           >
             Edited DAT/YAML
           </button>

@@ -22,13 +22,125 @@ use crate::{
     dat_query::{self, BrowseInfo, DatDescriptorInfo, TriangleMetadata, ZoneInfo},
     entity_diff::{
         self, DiffToolKind, EntityDiffResult, EntityDiffRow, EntityDiffSaveResult,
-        FolderDiffResult, SpellDiffResult, SpellDiffRow,
+        FolderDiffResult, ItemEditorRow, SpellDiffResult, SpellDiffRow,
     },
     errors::AppError,
     state::{AppState, FileNotification},
     DAT_GENERATION_DIR, LOOKUP_TABLE_DIR, RAW_DATA_DIR, ZONE_MAPPING_FILE,
 };
 use tauri::ipc::Response;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ItemEditorLoadResult {
+    pub english_source_path: String,
+    pub japanese_source_path: Option<String>,
+    pub english_output_yaml_path: String,
+    pub english_output_dat_path: String,
+    pub japanese_output_yaml_path: Option<String>,
+    pub japanese_output_dat_path: Option<String>,
+    pub rows: Vec<ItemEditorRow>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ItemEditorSaveResult {
+    pub written_count: usize,
+    pub saved_english: bool,
+    pub saved_japanese: bool,
+    pub english_out_yaml_path: String,
+    pub english_out_dat_path: Option<String>,
+    pub japanese_out_yaml_path: Option<String>,
+    pub japanese_out_dat_path: Option<String>,
+}
+
+fn rom_relative_path_from_path(path: &Path) -> Option<PathBuf> {
+    let components = path.components().collect::<Vec<_>>();
+    let rom_start = components.iter().position(|component| {
+        let upper = component.as_os_str().to_string_lossy().to_ascii_uppercase();
+        upper == "ROM"
+            || (upper.starts_with("ROM")
+                && upper
+                    .chars()
+                    .skip(3)
+                    .all(|character| character.is_ascii_digit()))
+    })?;
+
+    let mut relative = PathBuf::new();
+    for component in &components[rom_start..] {
+        relative.push(component.as_os_str());
+    }
+
+    Some(relative)
+}
+
+fn resolve_descriptor_relative_path(
+    descriptor: DatDescriptor,
+    lang: DatLanguage,
+    dat_context: &DatContext,
+) -> Result<String, AppError> {
+    let resolver = RelativeDatPathResolver { dat_context };
+
+    match lang {
+        DatLanguage::English => Ok(descriptor.use_dat_with(resolver)?),
+        DatLanguage::Japanese => {
+            if !descriptor.has_jp_dat() {
+                return Err(anyhow!("No Japanese DAT is mapped for {:?}.", descriptor).into());
+            }
+
+            Ok(descriptor.use_jp_dat_with(resolver)?)
+        }
+    }
+}
+
+fn preferred_dat_source_path(
+    relative_path: &str,
+    dat_context: &DatContext,
+    project_root: Option<&PathBuf>,
+) -> PathBuf {
+    if let Some(project_root) = project_root {
+        let project_path = project_root.join(relative_path);
+        if project_path.is_file() {
+            return project_path;
+        }
+    }
+
+    dat_context.ffxi_path.join(relative_path)
+}
+
+fn required_project_dat_source_path(
+    relative_path: &str,
+    project_root: &Path,
+) -> Result<PathBuf, AppError> {
+    let project_path = project_root.join(relative_path);
+    if project_path.is_file() {
+        Ok(project_path)
+    } else {
+        Err(anyhow!(
+            "The base DAT copy for {} was not found in the Project Folder. Click \"Make all Base DATs\" first.",
+            relative_path
+        )
+        .into())
+    }
+}
+
+fn build_output_paths_for_relative_path(
+    relative_path: &str,
+    project_root: &Path,
+) -> Result<(PathBuf, PathBuf), AppError> {
+    let relative_path = PathBuf::from(relative_path);
+    let file_name = relative_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or(anyhow!("Unable to resolve item DAT output filename."))?;
+    let parent = relative_path.parent().unwrap_or(Path::new(""));
+
+    let yaml_file_name = Path::new(file_name).with_extension("yml");
+    let dat_file_name = Path::new(file_name).with_extension("DAT");
+
+    Ok((
+        project_root.join("Yaml").join(parent).join(yaml_file_name),
+        project_root.join(parent).join(dat_file_name),
+    ))
+}
 
 #[tauri::command]
 #[specta::specta]
@@ -50,17 +162,159 @@ pub async fn select_project_folder<'a>(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn select_local_edit_folder<'a>(
-    path: Option<PathBuf>,
-    state: AppState<'a>,
-) -> Result<Option<PathBuf>, AppError> {
-    state.write().set_local_edit_path(path)
+pub async fn load_persistence_data<'a>(state: AppState<'a>) -> Result<PersistenceData, AppError> {
+    Ok(state.read().persistence.clone())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn load_persistence_data<'a>(state: AppState<'a>) -> Result<PersistenceData, AppError> {
-    Ok(state.read().persistence.clone())
+pub async fn resolve_dat_descriptor_path(
+    descriptor: DatDescriptor,
+    lang: Option<DatLanguage>,
+    state: AppState<'_>,
+) -> Result<String, AppError> {
+    let (dat_context, project_path) = {
+        let state = state.read();
+        (
+            state
+                .dat_context
+                .clone()
+                .ok_or(anyhow!("No DAT context."))?,
+            state.project_path.clone(),
+        )
+    };
+
+    let relative_path =
+        resolve_descriptor_relative_path(descriptor, lang.unwrap_or(DatLanguage::English), &dat_context)?;
+
+    let retail_path = dat_context.ffxi_path.join(&relative_path);
+
+    // Prefer an already-copied DAT in the project folder so editor
+    // selections reopen the editable file instead of re-targeting retail.
+    if let Some(project_root) = project_path {
+        let project_dat_path = project_root.join(&relative_path);
+        if project_dat_path.is_file() {
+            return Ok(project_dat_path.display().to_string());
+        }
+    }
+
+    Ok(retail_path.display().to_string())
+}
+
+fn copy_dat_to_output_root(
+    source_path: PathBuf,
+    output_root: PathBuf,
+) -> Result<PathBuf, AppError> {
+    let is_dat = source_path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.eq_ignore_ascii_case("dat"))
+        .unwrap_or(false);
+    if !is_dat {
+        return Err(anyhow!("Only DAT files can be copied into the project folder output tree.").into());
+    }
+
+    let rom_relative_path = rom_relative_path_from_path(&source_path)
+        .ok_or(anyhow!("Selected DAT must live under a ROM folder."))?;
+    let destination_path = output_root.join(rom_relative_path);
+
+    if let Some(parent) = destination_path.parent() {
+        fs::create_dir_all(parent).map_err(anyhow::Error::from)?;
+    }
+
+    if source_path != destination_path {
+        fs::copy(&source_path, &destination_path).map_err(anyhow::Error::from)?;
+    }
+
+    Ok(destination_path)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn copy_item_dats_to_project(
+    lang: Option<DatLanguage>,
+    state: AppState<'_>,
+) -> Result<Vec<String>, AppError> {
+    let (dat_context, project_root) = {
+        let state = state.read();
+        (
+            state
+                .dat_context
+                .clone()
+                .ok_or(anyhow!("No DAT context."))?,
+            state
+                .project_path
+                .clone()
+                .ok_or(anyhow!("No project folder selected."))?,
+        )
+    };
+
+    let mut copied_paths = Vec::new();
+
+    for descriptor_info in dat_query::ITEM_DATS {
+        let requested_languages = match lang {
+            Some(lang) => vec![lang],
+            None => {
+                let mut langs = vec![DatLanguage::English];
+                if descriptor_info.descriptor.has_jp_dat() {
+                    langs.push(DatLanguage::Japanese);
+                }
+                langs
+            }
+        };
+
+        for requested_lang in requested_languages {
+            if matches!(requested_lang, DatLanguage::Japanese) && !descriptor_info.descriptor.has_jp_dat() {
+                continue;
+            }
+
+            let relative_path = resolve_descriptor_relative_path(
+                descriptor_info.descriptor,
+                requested_lang,
+                &dat_context,
+            )?;
+            let retail_path = dat_context.ffxi_path.join(&relative_path);
+            let copied_path = copy_dat_to_output_root(retail_path, project_root.clone())?;
+            copied_paths.push(copied_path.display().to_string());
+        }
+    }
+
+    copied_paths.sort();
+    Ok(copied_paths)
+}
+
+#[tauri::command]
+pub async fn are_all_item_dats_made_in_project(state: AppState<'_>) -> Result<bool, AppError> {
+    let (dat_context, project_root) = {
+        let state = state.read();
+        (
+            state
+                .dat_context
+                .clone()
+                .ok_or(anyhow!("No DAT context."))?,
+            state
+                .project_path
+                .clone()
+                .ok_or(anyhow!("No project folder selected."))?,
+        )
+    };
+
+    for descriptor_info in dat_query::ITEM_DATS {
+        let mut langs = vec![DatLanguage::English];
+        if descriptor_info.descriptor.has_jp_dat() {
+            langs.push(DatLanguage::Japanese);
+        }
+
+        for lang in langs {
+            let relative_path =
+                resolve_descriptor_relative_path(descriptor_info.descriptor, lang, &dat_context)?;
+            if !project_root.join(relative_path).is_file() {
+                return Ok(false);
+            }
+        }
+    }
+
+    Ok(true)
 }
 
 #[tauri::command]
@@ -495,6 +749,69 @@ pub async fn compare_item_files(
 }
 
 #[tauri::command]
+pub async fn load_item_editor_data(
+    descriptor: DatDescriptor,
+    state: AppState<'_>,
+) -> Result<ItemEditorLoadResult, AppError> {
+    let (dat_context, project_root) = {
+        let state = state.read();
+        (
+            state
+                .dat_context
+                .clone()
+                .ok_or(anyhow!("No DAT context."))?,
+            state
+                .project_path
+                .clone()
+                .ok_or(anyhow!("No project folder selected."))?,
+        )
+    };
+
+    let english_relative =
+        resolve_descriptor_relative_path(descriptor, DatLanguage::English, &dat_context)?;
+    let english_source_path = required_project_dat_source_path(&english_relative, &project_root)?;
+    let (english_output_yaml_path, english_output_dat_path) =
+        build_output_paths_for_relative_path(&english_relative, &project_root)?;
+
+    let (japanese_source_path, japanese_output_yaml_path, japanese_output_dat_path) =
+        if descriptor.has_jp_dat() {
+            let japanese_relative =
+                resolve_descriptor_relative_path(descriptor, DatLanguage::Japanese, &dat_context)?;
+            let japanese_source_path =
+                required_project_dat_source_path(&japanese_relative, &project_root)?;
+            let (japanese_output_yaml_path, japanese_output_dat_path) =
+                build_output_paths_for_relative_path(&japanese_relative, &project_root)?;
+
+            (
+                Some(japanese_source_path),
+                Some(japanese_output_yaml_path),
+                Some(japanese_output_dat_path),
+            )
+        } else {
+            (None, None, None)
+        };
+
+    let rows =
+        entity_diff::load_item_editor_rows(english_source_path.clone(), japanese_source_path.clone())?;
+
+    Ok(ItemEditorLoadResult {
+        english_source_path: english_source_path.display().to_string(),
+        japanese_source_path: japanese_source_path
+            .as_ref()
+            .map(|path| path.display().to_string()),
+        english_output_yaml_path: english_output_yaml_path.display().to_string(),
+        english_output_dat_path: english_output_dat_path.display().to_string(),
+        japanese_output_yaml_path: japanese_output_yaml_path
+            .as_ref()
+            .map(|path| path.display().to_string()),
+        japanese_output_dat_path: japanese_output_dat_path
+            .as_ref()
+            .map(|path| path.display().to_string()),
+        rows,
+    })
+}
+
+#[tauri::command]
 pub async fn compare_spell_files(
     old_path: PathBuf,
     new_path: PathBuf,
@@ -530,6 +847,110 @@ pub async fn save_item_diff(
         out_yaml_path,
         out_dat_path,
     )?)
+}
+
+#[tauri::command]
+pub async fn save_item_editor_data(
+    descriptor: DatDescriptor,
+    rows: Vec<ItemEditorRow>,
+    save_target: Option<String>,
+    state: AppState<'_>,
+) -> Result<ItemEditorSaveResult, AppError> {
+    let target = save_target
+        .unwrap_or_else(|| "both".to_string())
+        .to_ascii_lowercase();
+    let save_english = target == "both" || target == "english";
+    let save_japanese = target == "both" || target == "japanese";
+
+    if !save_english && !save_japanese {
+        return Err(anyhow!("Unknown item editor save target: {target}.").into());
+    }
+
+    let (dat_context, project_root) = {
+        let state = state.read();
+        (
+            state
+                .dat_context
+                .clone()
+                .ok_or(anyhow!("No DAT context."))?,
+            state
+                .project_path
+                .clone()
+                .ok_or(anyhow!("No project folder selected."))?,
+        )
+    };
+
+    let english_relative =
+        resolve_descriptor_relative_path(descriptor, DatLanguage::English, &dat_context)?;
+    let english_source_path =
+        preferred_dat_source_path(&english_relative, &dat_context, Some(&project_root));
+    let (english_output_yaml_path, english_output_dat_path) =
+        build_output_paths_for_relative_path(&english_relative, &project_root)?;
+
+    let has_japanese_dat = descriptor.has_jp_dat();
+    if save_japanese && !has_japanese_dat {
+        return Err(anyhow!("This item DAT does not have a Japanese pair to save.").into());
+    }
+
+    let (japanese_source_path, japanese_output_yaml_path, japanese_output_dat_path) =
+        if has_japanese_dat {
+            let japanese_relative =
+                resolve_descriptor_relative_path(descriptor, DatLanguage::Japanese, &dat_context)?;
+            let japanese_source_path =
+                preferred_dat_source_path(&japanese_relative, &dat_context, Some(&project_root));
+            let (japanese_output_yaml_path, japanese_output_dat_path) =
+                build_output_paths_for_relative_path(&japanese_relative, &project_root)?;
+
+            (
+                Some(japanese_source_path),
+                Some(japanese_output_yaml_path),
+                Some(japanese_output_dat_path),
+            )
+        } else {
+            (None, None, None)
+        };
+
+    let written_count = entity_diff::save_item_editor_rows(
+        english_source_path,
+        japanese_source_path,
+        rows,
+        save_english,
+        save_japanese,
+        english_output_yaml_path.clone(),
+        Some(english_output_dat_path.clone()),
+        japanese_output_yaml_path.clone(),
+        japanese_output_dat_path.clone(),
+    )?;
+
+    Ok(ItemEditorSaveResult {
+        written_count,
+        saved_english: save_english,
+        saved_japanese: save_japanese,
+        english_out_yaml_path: if save_english {
+            english_output_yaml_path.display().to_string()
+        } else {
+            String::new()
+        },
+        english_out_dat_path: if save_english {
+            Some(english_output_dat_path.display().to_string())
+        } else {
+            None
+        },
+        japanese_out_yaml_path: if save_japanese {
+            japanese_output_yaml_path
+            .as_ref()
+            .map(|path| path.display().to_string())
+        } else {
+            None
+        },
+        japanese_out_dat_path: if save_japanese {
+            japanese_output_dat_path
+            .as_ref()
+            .map(|path| path.display().to_string())
+        } else {
+            None
+        },
+    })
 }
 
 #[tauri::command]

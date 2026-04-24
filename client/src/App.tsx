@@ -25,6 +25,7 @@ import { unwrap } from "./util";
 import EntityDiffTool from "./components/EntityDiffTool";
 import FileDiffsTool from "./components/FileDiffsTool";
 import ItemDiffTool from "./components/ItemDiffTool";
+import ItemEditorTool from "./components/ItemEditorTool";
 import SpellDiffTool from "./components/SpellDiffTool";
 
 function formatDatDescriptorType(type: string) {
@@ -48,6 +49,11 @@ const navItems: NavItem[] = [
         header: "Compare Tools",
         items: [
           {
+            name: "File Diffs",
+            path: "/file-diffs",
+            icon: () => <HiSolidMagnifyingGlass />,
+          },
+          {
             name: "Entities",
             path: "/entity-diff",
             icon: () => <HiSolidArrowsRightLeft />,
@@ -57,16 +63,16 @@ const navItems: NavItem[] = [
             path: "/item-diff",
             icon: () => <HiSolidArrowsRightLeft />,
           },
-          {
-            name: "File Diffs",
-            path: "/file-diffs",
-            icon: () => <HiSolidMagnifyingGlass />,
-          },
         ],
       },
       {
         header: "Direct Edit Tools",
         items: [
+          {
+            name: "Items",
+            path: "/item-editor",
+            icon: () => <HiSolidPencilSquare />,
+          },
           {
             name: "Spells",
             path: "/spell-diff",
@@ -332,6 +338,11 @@ function App() {
                 <Route
                   path="/item-diff"
                   component={ItemDiffTool}
+                ></Route>
+
+                <Route
+                  path="/item-editor"
+                  component={ItemEditorTool}
                 ></Route>
 
                 <Route

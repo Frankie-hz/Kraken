@@ -1,7 +1,8 @@
-import { message, open } from "@tauri-apps/plugin-dialog";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useNavigate } from "@solidjs/router";
 import { For, Show, createEffect, createSignal } from "solid-js";
 import { FolderDiffResult, compareEntityNameFolders } from "../custom_bindings";
+import { showMessage } from "../dialogs";
 import { useData } from "../store";
 import { unwrap } from "../util";
 
@@ -69,7 +70,7 @@ function loadCachedState(): FileDiffsCachedState | null {
 
 function FileDiffsTool() {
   const {
-    folders: { getDatFolder, getLocalEditFolder },
+    folders: { getDatFolder, getProjectFolder },
   } = useData();
   const navigate = useNavigate();
   const cachedState = loadCachedState();
@@ -89,9 +90,9 @@ function FileDiffsTool() {
     return result;
   })();
 
-  const localEditRoot = getLocalEditFolder();
-  const initialCustomDefault = defaultCustomFolderFromRoot(localEditRoot);
-  const initialOldRetailDefault = defaultOldRetailFolderFromRoot(localEditRoot);
+  const projectRoot = getProjectFolder();
+  const initialCustomDefault = defaultCustomFolderFromRoot(projectRoot);
+  const initialOldRetailDefault = defaultOldRetailFolderFromRoot(projectRoot);
 
   const [customFolder, setCustomFolder] = createSignal(
     cachedState?.custom_folder ?? initialCustomDefault ?? "",
@@ -106,20 +107,20 @@ function FileDiffsTool() {
   const [result, setResult] = createSignal<FolderDiffResult | null>(cachedResult);
 
   createEffect(() => {
-    const localEditFolder = getLocalEditFolder();
-    if (!localEditFolder) {
+    const projectFolder = getProjectFolder();
+    if (!projectFolder) {
       return;
     }
 
-    const nextCustomDefault = defaultCustomFolderFromRoot(localEditFolder);
-    const nextOldRetailDefault = defaultOldRetailFolderFromRoot(localEditFolder);
+    const nextCustomDefault = defaultCustomFolderFromRoot(projectFolder);
+    const nextOldRetailDefault = defaultOldRetailFolderFromRoot(projectFolder);
 
     const currentCustom = customFolder();
     if (
       nextCustomDefault
       && (
         !currentCustom
-        || normalizePath(currentCustom) === normalizePath(localEditFolder)
+        || normalizePath(currentCustom) === normalizePath(projectFolder)
       )
     ) {
       setCustomFolder(nextCustomDefault);
@@ -130,7 +131,7 @@ function FileDiffsTool() {
       nextOldRetailDefault
       && (
         !currentOldRetail
-        || normalizePath(currentOldRetail) === normalizePath(localEditFolder)
+        || normalizePath(currentOldRetail) === normalizePath(projectFolder)
       )
     ) {
       setOldRetailFolder(nextOldRetailDefault);
@@ -174,7 +175,10 @@ function FileDiffsTool() {
     const resolvedNewRetailFolder = getDatFolder() || "";
 
     if (!customFolder() || !oldRetailFolder() || !resolvedNewRetailFolder) {
-      await message("Select Custom + Old Retail folders, then set the FFXI folder in the status bar.");
+      await showMessage("Select Custom + Old Retail folders, then set the FFXI folder in the status bar.", {
+        title: "Compare Blocked",
+        kind: "warning",
+      });
       return;
     }
 
@@ -193,7 +197,7 @@ function FileDiffsTool() {
         setLastNotice(`Found ${res.retail_changed_count} changed file(s).`);
       }
     } catch (err) {
-      await message(`${err}`);
+      await showMessage(`${err}`, { title: "Compare Error", kind: "error" });
     } finally {
       setComparing(false);
     }

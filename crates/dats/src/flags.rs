@@ -24,6 +24,21 @@ serde_bitflags!(ValidTargets);
 
 bitflags! {
     #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
+    pub struct MagicModifier: u8 {
+        const Accession = 0x01;
+        const Manifestation = 0x02;
+        const Addendum = 0x04;
+        const TabulaRasa = 0x08;
+        const ElementalSeal = 0x10;
+        const Geocolure = 0x20;
+        const TheurgicFocus = 0x40;
+        const ConsumeAllMP = 0x80;
+    }
+}
+serde_bitflags!(MagicModifier);
+
+bitflags! {
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
     pub struct ItemFlag: u16 {
         // Combined Flags
         const Ex = 0x6040; // NoAuction + NoDelivery + NoTrade
@@ -106,6 +121,7 @@ serde_bitflags!(Race);
 bitflags! {
     #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
     pub struct JobFlag: u32 {
+        const None = 0x00000001;
         const All = 0x007FFFFE;
 
         const WAR = 0x00000002;

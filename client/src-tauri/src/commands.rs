@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use dats::base::{Dat, DatId, ZoneId};
 use dats::context::DatContext;
 use dats::dat_format::DatFormat;
@@ -18,15 +18,15 @@ use serde::Serialize;
 use tracing_subscriber::fmt::MakeWriter;
 
 use crate::{
+    DAT_GENERATION_DIR, LOOKUP_TABLE_DIR, RAW_DATA_DIR, ZONE_MAPPING_FILE,
     app_persistence::PersistenceData,
     dat_query::{self, BrowseInfo, DatDescriptorInfo, TriangleMetadata, ZoneInfo},
     entity_diff::{
         self, DiffToolKind, EntityDiffResult, EntityDiffRow, EntityDiffSaveResult,
-        FolderDiffResult, ItemEditorRow, SpellDiffResult, SpellDiffRow,
+        FolderDiffResult, ItemEditorRow, SpellDiffResult, SpellDiffRow, SpellTextPaths,
     },
     errors::AppError,
     state::{AppState, FileNotification},
-    DAT_GENERATION_DIR, LOOKUP_TABLE_DIR, RAW_DATA_DIR, ZONE_MAPPING_FILE,
 };
 use tauri::ipc::Response;
 
@@ -184,8 +184,11 @@ pub async fn resolve_dat_descriptor_path(
         )
     };
 
-    let relative_path =
-        resolve_descriptor_relative_path(descriptor, lang.unwrap_or(DatLanguage::English), &dat_context)?;
+    let relative_path = resolve_descriptor_relative_path(
+        descriptor,
+        lang.unwrap_or(DatLanguage::English),
+        &dat_context,
+    )?;
 
     let retail_path = dat_context.ffxi_path.join(&relative_path);
 
@@ -211,7 +214,9 @@ fn copy_dat_to_output_root(
         .map(|value| value.eq_ignore_ascii_case("dat"))
         .unwrap_or(false);
     if !is_dat {
-        return Err(anyhow!("Only DAT files can be copied into the project folder output tree.").into());
+        return Err(
+            anyhow!("Only DAT files can be copied into the project folder output tree.").into(),
+        );
     }
 
     let rom_relative_path = rom_relative_path_from_path(&source_path)
@@ -264,7 +269,9 @@ pub async fn copy_item_dats_to_project(
         };
 
         for requested_lang in requested_languages {
-            if matches!(requested_lang, DatLanguage::Japanese) && !descriptor_info.descriptor.has_jp_dat() {
+            if matches!(requested_lang, DatLanguage::Japanese)
+                && !descriptor_info.descriptor.has_jp_dat()
+            {
                 continue;
             }
 
@@ -315,6 +322,127 @@ pub async fn are_all_item_dats_made_in_project(state: AppState<'_>) -> Result<bo
     }
 
     Ok(true)
+}
+
+fn spell_editor_relative_paths(
+    dat_context: &DatContext,
+) -> Result<(String, SpellTextPaths), AppError> {
+    let data_menu = resolve_descriptor_relative_path(
+        DatDescriptor::DataMenu,
+        DatLanguage::English,
+        dat_context,
+    )?;
+    let spell_names_en = resolve_descriptor_relative_path(
+        DatDescriptor::SpellNames,
+        DatLanguage::English,
+        dat_context,
+    )?;
+    let spell_names_jp = resolve_descriptor_relative_path(
+        DatDescriptor::SpellNames,
+        DatLanguage::Japanese,
+        dat_context,
+    )?;
+    let spell_descriptions_en = resolve_descriptor_relative_path(
+        DatDescriptor::SpellDescriptions,
+        DatLanguage::English,
+        dat_context,
+    )?;
+    let spell_descriptions_jp = resolve_descriptor_relative_path(
+        DatDescriptor::SpellDescriptions,
+        DatLanguage::Japanese,
+        dat_context,
+    )?;
+
+    Ok((
+        data_menu,
+        SpellTextPaths {
+            spell_names_en: PathBuf::from(spell_names_en),
+            spell_names_jp: PathBuf::from(spell_names_jp),
+            spell_descriptions_en: PathBuf::from(spell_descriptions_en),
+            spell_descriptions_jp: PathBuf::from(spell_descriptions_jp),
+        },
+    ))
+}
+
+fn spell_editor_project_text_paths(
+    dat_context: &DatContext,
+    project_root: &Path,
+) -> Result<SpellTextPaths, AppError> {
+    let (_, relative_paths) = spell_editor_relative_paths(dat_context)?;
+    Ok(SpellTextPaths {
+        spell_names_en: project_root.join(relative_paths.spell_names_en),
+        spell_names_jp: project_root.join(relative_paths.spell_names_jp),
+        spell_descriptions_en: project_root.join(relative_paths.spell_descriptions_en),
+        spell_descriptions_jp: project_root.join(relative_paths.spell_descriptions_jp),
+    })
+}
+
+#[tauri::command]
+pub async fn copy_spell_dat_to_project(state: AppState<'_>) -> Result<String, AppError> {
+    let (dat_context, project_root) = {
+        let state = state.read();
+        (
+            state
+                .dat_context
+                .clone()
+                .ok_or(anyhow!("No DAT context."))?,
+            state
+                .project_path
+                .clone()
+                .ok_or(anyhow!("No project folder selected."))?,
+        )
+    };
+
+    let (data_menu_relative, text_relative_paths) = spell_editor_relative_paths(&dat_context)?;
+    let copied_path = copy_dat_to_output_root(
+        dat_context.ffxi_path.join(data_menu_relative),
+        project_root.clone(),
+    )?;
+    for relative_path in [
+        text_relative_paths.spell_names_en,
+        text_relative_paths.spell_names_jp,
+        text_relative_paths.spell_descriptions_en,
+        text_relative_paths.spell_descriptions_jp,
+    ] {
+        copy_dat_to_output_root(
+            dat_context.ffxi_path.join(relative_path),
+            project_root.clone(),
+        )?;
+    }
+    Ok(copied_path.display().to_string())
+}
+
+#[tauri::command]
+pub async fn is_spell_dat_made_in_project(state: AppState<'_>) -> Result<bool, AppError> {
+    let project_root = {
+        let state = state.read();
+        state
+            .project_path
+            .clone()
+            .ok_or(anyhow!("No project folder selected."))?
+    };
+
+    let dat_context = {
+        let state = state.read();
+        state
+            .dat_context
+            .clone()
+            .ok_or(anyhow!("No DAT context."))?
+    };
+    let (data_menu_relative, text_relative_paths) = spell_editor_relative_paths(&dat_context)?;
+    Ok(project_root.join(data_menu_relative).is_file()
+        && project_root
+            .join(text_relative_paths.spell_names_en)
+            .is_file()
+        && project_root
+            .join(text_relative_paths.spell_names_jp)
+            .is_file()
+        && project_root
+            .join(text_relative_paths.spell_descriptions_en)
+            .is_file()
+        && project_root
+            .join(text_relative_paths.spell_descriptions_jp)
+            .is_file())
 }
 
 #[tauri::command]
@@ -791,8 +919,10 @@ pub async fn load_item_editor_data(
             (None, None, None)
         };
 
-    let rows =
-        entity_diff::load_item_editor_rows(english_source_path.clone(), japanese_source_path.clone())?;
+    let rows = entity_diff::load_item_editor_rows(
+        english_source_path.clone(),
+        japanese_source_path.clone(),
+    )?;
 
     Ok(ItemEditorLoadResult {
         english_source_path: english_source_path.display().to_string(),
@@ -815,8 +945,22 @@ pub async fn load_item_editor_data(
 pub async fn compare_spell_files(
     old_path: PathBuf,
     new_path: PathBuf,
+    state: AppState<'_>,
 ) -> Result<SpellDiffResult, AppError> {
-    Ok(entity_diff::compare_spell_files(old_path, new_path)?)
+    let spell_text_paths = {
+        let state = state.read();
+        match (state.dat_context.as_ref(), state.project_path.as_ref()) {
+            (Some(dat_context), Some(project_root)) => {
+                Some(spell_editor_project_text_paths(dat_context, project_root)?)
+            }
+            _ => None,
+        }
+    };
+    Ok(entity_diff::compare_spell_files_with_text_paths(
+        old_path,
+        new_path,
+        spell_text_paths,
+    )?)
 }
 
 #[tauri::command]
@@ -938,15 +1082,15 @@ pub async fn save_item_editor_data(
         },
         japanese_out_yaml_path: if save_japanese {
             japanese_output_yaml_path
-            .as_ref()
-            .map(|path| path.display().to_string())
+                .as_ref()
+                .map(|path| path.display().to_string())
         } else {
             None
         },
         japanese_out_dat_path: if save_japanese {
             japanese_output_dat_path
-            .as_ref()
-            .map(|path| path.display().to_string())
+                .as_ref()
+                .map(|path| path.display().to_string())
         } else {
             None
         },
@@ -960,13 +1104,24 @@ pub async fn save_spell_diff(
     rows: Vec<SpellDiffRow>,
     out_yaml_path: PathBuf,
     out_dat_path: Option<PathBuf>,
+    state: AppState<'_>,
 ) -> Result<EntityDiffSaveResult, AppError> {
-    Ok(entity_diff::save_spell_diff(
+    let spell_text_paths = {
+        let state = state.read();
+        match (state.dat_context.as_ref(), state.project_path.as_ref()) {
+            (Some(dat_context), Some(project_root)) => {
+                Some(spell_editor_project_text_paths(dat_context, project_root)?)
+            }
+            _ => None,
+        }
+    };
+    Ok(entity_diff::save_spell_diff_with_text_paths(
         old_path,
         new_path,
         rows,
         out_yaml_path,
         out_dat_path,
+        spell_text_paths,
     )?)
 }
 

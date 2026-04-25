@@ -79,6 +79,8 @@ fn main() {
             commands::resolve_dat_descriptor_path,
             commands::copy_item_dats_to_project,
             commands::are_all_item_dats_made_in_project,
+            commands::copy_spell_dat_to_project,
+            commands::is_spell_dat_made_in_project,
             commands::load_item_editor_data,
             commands::browse_dats,
             commands::get_zones_for_type,

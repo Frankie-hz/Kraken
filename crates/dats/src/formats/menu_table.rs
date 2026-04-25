@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    enums::{Element, JobEnum, MagicType, SkillType},
+    enums::{AoeType, Element, JobEnum, MagicType, MagicValidTargetType, SkillType},
     formats::{dmsg_list::DmsgContent, dmsg_table::DmsgTable},
-    serde_base64, serde_hex,
+    serde_base64, serde_hex, serde_hex_num,
     utils::{
         decode_data_block_masked, decode_text_block, encode_data_block_masked, encode_text_block,
     },
@@ -18,7 +18,11 @@ use common::{
 use encoding::{decoder::Decoder, encoder::Encoder};
 use serde_derive::{Deserialize, Serialize};
 
-use crate::{dat_format::DatFormat, enums::AbilityType, flags::ValidTargets};
+use crate::{
+    dat_format::DatFormat,
+    enums::AbilityType,
+    flags::{JobFlag, MagicModifier, ValidTargets},
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "entries")]
@@ -271,8 +275,16 @@ pub struct MagicInfo {
     recast_time: u8,
     level_required: BTreeMap<JobEnum, u16>,
     id: u16,
-    icon_id: u8,
-
+    icon_id: u16,
+    icon2_id: u16,
+    modifiers: MagicModifier,
+    range: i8,
+    radius: i8,
+    aoe_type: AoeType,
+    valid_target_type: MagicValidTargetType,
+    #[serde(with = "serde_hex_num")]
+    modifiers_ex: u32,
+    gifts_required: JobFlag,
     #[serde(with = "serde_hex")]
     unknowns: Vec<u8>,
 }
@@ -288,7 +300,7 @@ impl SectionInfo for MagicInfo {
         decode_data_block_masked(&mut data_bytes);
         let mut data_walker = BufferedByteWalker::on(data_bytes);
 
-        let info = MagicInfo {
+        let mut info = MagicInfo {
             index: data_walker.step::<u16>()?,
             name: None,
             magic_type: MagicType::from(data_walker.step::<u16>()?),
@@ -311,12 +323,18 @@ impl SectionInfo for MagicInfo {
                 .collect(),
             id: data_walker.step()?,
             icon_id: data_walker.step()?,
-
-            unknowns: data_walker
-                .take_bytes(data_walker.remaining() - 1)?
-                .to_vec(),
+            icon2_id: data_walker.step()?,
+            modifiers: MagicModifier::from_bits_retain(data_walker.step::<u8>()?),
+            range: data_walker.step::<u8>()? as i8,
+            radius: data_walker.step::<u8>()? as i8,
+            aoe_type: AoeType::from(data_walker.step::<u8>()?),
+            valid_target_type: MagicValidTargetType::from(data_walker.step::<u32>()?),
+            modifiers_ex: data_walker.step()?,
+            unknowns: data_walker.take_bytes(12)?.to_vec(),
+            gifts_required: JobFlag::from_bits_retain(data_walker.step::<u32>()?),
         };
 
+        info.unknowns.extend_from_slice(data_walker.take_bytes(3)?);
         data_walker.expect_msg::<u8>(0xFF, "End of magic marker")?;
 
         Ok(info)
@@ -350,7 +368,23 @@ impl SectionInfo for MagicInfo {
 
         data_walker.write(self.id);
         data_walker.write(self.icon_id);
-        data_walker.write_bytes(&self.unknowns);
+        data_walker.write(self.icon2_id);
+        data_walker.write(self.modifiers.bits());
+        data_walker.write(self.range as u8);
+        data_walker.write(self.radius as u8);
+        data_walker.write::<u8>(self.aoe_type.into());
+        data_walker.write::<u32>(self.valid_target_type.into());
+        data_walker.write(self.modifiers_ex);
+        if self.unknowns.len() != 15 {
+            return Err(anyhow!(
+                "MagicInfo unknowns must be 15 bytes, found {}",
+                self.unknowns.len()
+            ));
+        }
+
+        data_walker.write_bytes(&self.unknowns[..12]);
+        data_walker.write(self.gifts_required.bits());
+        data_walker.write_bytes(&self.unknowns[12..]);
 
         data_walker.write::<u8>(0xFF);
 
@@ -739,8 +773,8 @@ mod tests {
 
     use crate::{
         dat_format::DatFormat,
-        enums::{Element, JobEnum, MagicType, SkillType},
-        flags::ValidTargets,
+        enums::{AoeType, Element, JobEnum, MagicType, MagicValidTargetType, SkillType},
+        flags::{JobFlag, MagicModifier, ValidTargets},
         formats::menu_table::Section,
     };
 
@@ -786,6 +820,36 @@ mod tests {
                 .collect()
         );
         assert_eq!(spell.icon_id, 6);
+        assert_eq!(spell.icon2_id, 114);
+        assert_eq!(
+            spell.modifiers,
+            MagicModifier::Accession | MagicModifier::Addendum
+        );
+        assert_eq!(spell.range, 12);
+        assert_eq!(spell.radius, 0);
+        assert_eq!(spell.aoe_type, AoeType::None);
+        assert_eq!(spell.valid_target_type, MagicValidTargetType::Pc);
+        assert_eq!(spell.modifiers_ex, 0x02800201);
+        assert_eq!(spell.gifts_required, JobFlag::empty());
+        assert_eq!(
+            spell.unknowns,
+            vec![4, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        );
+
+        let spell_yaml = serde_yaml::to_string(spell).unwrap();
+        assert!(spell_yaml.contains("icon2_id: 114"));
+        assert!(spell_yaml.contains("modifiers:"));
+        assert!(spell_yaml.contains("range: 12"));
+        assert!(spell_yaml.contains("radius: 0"));
+        assert!(spell_yaml.contains("aoe_type: None"));
+        assert!(spell_yaml.contains("valid_target_type: Pc"));
+        assert!(spell_yaml.contains("modifiers_ex: '0x01028002'"));
+        assert!(spell_yaml.contains("gifts_required: []"));
+        assert!(spell_yaml.contains("unknowns: '0x040001000000000000000000000000'"));
+        assert!(!spell_yaml.contains("unknown50:"));
+        assert!(!spell_yaml.contains("unknown54:"));
+        assert!(!spell_yaml.contains("unknown58:"));
+        assert!(!spell_yaml.contains("unknown60:"));
     }
 
     #[test]

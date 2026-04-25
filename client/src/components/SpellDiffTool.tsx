@@ -1,9 +1,9 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { useSearchParams } from "@solidjs/router";
-import { For, Show, batch, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, batch, createEffect, createMemo, createResource, createSignal, onCleanup, onMount, untrack } from "solid-js";
 import { createStore } from "solid-js/store";
-import { SpellDiffRow, compareSpellFiles, saveSpellDiff } from "../custom_bindings";
-import { showMessage } from "../dialogs";
+import { SpellDiffRow, compareSpellFiles, copySpellDatToProject, isSpellDatMadeInProject, saveSpellDiff } from "../custom_bindings";
+import { showConfirm, showMessage } from "../dialogs";
 import { useData } from "../store";
 import { unwrap } from "../util";
 
@@ -48,6 +48,20 @@ function getOutputRoot(projectRoot: string | null): string | null {
   }
 
   return projectRoot.replaceAll("\\", "/").replace(/\/+$/, "");
+}
+
+function normalizePath(path: string) {
+  return path.replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase();
+}
+
+function pathIsWithinRoot(path: string, root: string | null) {
+  if (!path || !root) {
+    return false;
+  }
+
+  const normalizedPath = normalizePath(path);
+  const normalizedRoot = normalizePath(root);
+  return normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}/`);
 }
 
 function buildAutoSavePaths(
@@ -124,6 +138,65 @@ function parseLevels(text: string): Record<string, number> | null {
   return parsed;
 }
 
+function estimateWrappedLines(text: string | null | undefined, charsPerLine: number) {
+  const safeCharsPerLine = Math.max(1, charsPerLine);
+  const lines = (text ?? "").split(/\r?\n/);
+  if (lines.length === 0) {
+    return 1;
+  }
+
+  return lines.reduce((total, line) => {
+    const length = Array.from(line || " ").length;
+    return total + Math.max(1, Math.ceil(length / safeCharsPerLine));
+  }, 0);
+}
+
+const VALID_TARGET_OPTIONS = [
+  "SelfTarget",
+  "Player",
+  "PartyMember",
+  "Ally",
+  "NPC",
+  "Enemy",
+  "Object",
+  "Corpse",
+  "CorpseOnly",
+];
+
+const VALID_TARGET_LABELS: Record<string, string> = {
+  SelfTarget: "Self",
+  PartyMember: "Party",
+};
+
+function normalizeStringList(values: string[] | null | undefined) {
+  const normalized = (values ?? [])
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+
+  return Array.from(new Set(normalized)).sort((a, b) => a.localeCompare(b));
+}
+
+function stringListsEqual(left: string[] | null | undefined, right: string[] | null | undefined) {
+  const normalizedLeft = normalizeStringList(left);
+  const normalizedRight = normalizeStringList(right);
+  return normalizedLeft.length === normalizedRight.length && normalizedLeft.every((value, index) => value === normalizedRight[index]);
+}
+
+function validTargetOptionsForValues(...lists: Array<string[] | null | undefined>) {
+  const merged = new Set(VALID_TARGET_OPTIONS);
+  for (const list of lists) {
+    for (const value of normalizeStringList(list)) {
+      merged.add(value);
+    }
+  }
+
+  return Array.from(merged);
+}
+
+function validTargetLabel(target: string) {
+  return VALID_TARGET_LABELS[target] ?? target;
+}
+
 function pickerDefaultPath(currentPath: string, fallbackPath: string) {
   if (!currentPath) {
     return fallbackPath;
@@ -135,14 +208,22 @@ function pickerDefaultPath(currentPath: string, fallbackPath: string) {
 
 function rowMatchesFilter(row: SpellDiffRow, filterText: string) {
   const name = row.new_name ?? row.old_name ?? "";
+  const nameJp = row.new_name_jp ?? row.old_name_jp ?? "";
+  const descriptionEn = row.new_description_en ?? row.old_description_en ?? "";
+  const descriptionJp = row.new_description_jp ?? row.old_description_jp ?? "";
   const levels = formatLevels(row.new_level_required ?? row.old_level_required ?? null);
+  const validTargets = normalizeStringList(row.new_valid_targets ?? row.old_valid_targets).join(" ");
 
   const haystack = [
     name,
+    nameJp,
     row.new_index ?? row.old_index,
     row.new_mp_cost ?? row.old_mp_cost,
     row.new_cast_time ?? row.old_cast_time,
     row.new_recast_time ?? row.old_recast_time,
+    descriptionEn,
+    descriptionJp,
+    validTargets,
     levels,
   ]
     .filter((value) => value !== null && value !== undefined)
@@ -160,6 +241,13 @@ function buildRowIndexById(rows: SpellDiffRow[]) {
   return indexById;
 }
 
+function spellLevelsEqual(
+  left: Record<string, number> | null | undefined,
+  right: Record<string, number> | null | undefined,
+) {
+  return formatLevels(left ?? null) === formatLevels(right ?? null);
+}
+
 const compactButtonBaseClass = "my-0 px-1.5 py-0.5 text-xs font-normal shadow-none border rounded-md";
 const compactButtonIdleClass = "bg-slate-800 border-slate-500 text-slate-200";
 const compactButtonActiveClass = "bg-green-800 border-green-500 text-slate-100";
@@ -167,9 +255,33 @@ const compactButtonActiveClass = "bg-green-800 border-green-500 text-slate-100";
 const SPELL_RELATIVE_PATH = "ROM/118/114.DAT";
 const SPELL_EDITOR_STATE_KEY = "xi_tinkerer_spell_editor_state_v1";
 
-const SPELL_EDITOR_COLUMN_COUNT = 6;
-const VIRTUAL_ROW_HEIGHT_PX = 34;
-const VIRTUAL_OVERSCAN_ROWS = 16;
+const MIN_VIRTUAL_ROW_HEIGHT_PX = 64;
+const VIRTUAL_OVERSCAN_ROWS = 12;
+const TEXTAREA_MIN_HEIGHT_PX = 52;
+const TEXTAREA_LINE_HEIGHT_PX = 20;
+const TEXTAREA_VERTICAL_CHROME_PX = 12;
+const TEXTAREA_WRAP_SAFETY_PX = 10;
+const TEXTAREA_ROW_PADDING_PX = 12;
+const VALID_TARGET_ROW_HEIGHT_PX = 18;
+const LEVEL_EXTRA_HEIGHT_PX = 18;
+
+// Weighted realtive to each other
+const INDEX_COLUMN_WEIGHT = 5;
+const NAMES_COLUMN_WEIGHT = 13;
+const MP_COLUMN_WEIGHT = 6;
+const CAST_COLUMN_WEIGHT = 5;
+const RECAST_COLUMN_WEIGHT = 5;
+const VALID_TARGETS_COLUMN_WEIGHT = 20;
+const DESCRIPTION_COLUMN_WEIGHT = 18.5;
+const LEVEL_COLUMN_WEIGHT = 14;
+
+const DEFAULT_ROW_METRICS = {
+  descriptionEnHeight: TEXTAREA_MIN_HEIGHT_PX,
+  descriptionJpHeight: TEXTAREA_MIN_HEIGHT_PX,
+  validTargetsHeight: TEXTAREA_MIN_HEIGHT_PX,
+  levelHeight: TEXTAREA_MIN_HEIGHT_PX,
+  rowHeight: MIN_VIRTUAL_ROW_HEIGHT_PX,
+};
 
 interface SpellEditorCachedState {
   spell_path: string;
@@ -216,7 +328,7 @@ function loadCachedState(): SpellEditorCachedState | null {
 
 function SpellDiffTool() {
   const {
-    folders: { getDatFolder, getProjectFolder },
+    folders: { getProjectFolder },
   } = useData();
   const [searchParams] = useSearchParams();
   const cachedState = loadCachedState();
@@ -231,17 +343,35 @@ function SpellDiffTool() {
 
   const [isLoading, setLoading] = createSignal(false);
   const [isSaving, setSaving] = createSignal(false);
+  const [isMakingBaseDat, setMakingBaseDat] = createSignal(false);
   const [prefillApplied, setPrefillApplied] = createSignal(false);
   const [rowsVersion, setRowsVersion] = createSignal(0);
-
   const [scrollTop, setScrollTop] = createSignal(0);
   const [tableViewportHeight, setTableViewportHeight] = createSignal(480);
+  const [tableViewportWidth, setTableViewportWidth] = createSignal(960);
+  const [showNamesColumn, setShowNamesColumn] = createSignal(true);
+  const [showTimingColumns, setShowTimingColumns] = createSignal(true);
+  const [showValidTargetsColumn, setShowValidTargetsColumn] = createSignal(true);
+  const [showDescriptionsColumn, setShowDescriptionsColumn] = createSignal(true);
+  const [showLevelColumn, setShowLevelColumn] = createSignal(true);
 
   const [levelDrafts, setLevelDrafts] = createStore<Record<number, string>>({});
 
   let tableContainerRef: HTMLDivElement | undefined;
   let scrollFrame = 0;
+  let tableMeasureFrame = 0;
   let persistStateTimer: number | undefined;
+  const descriptionDrafts = new Map<number, Partial<Pick<SpellDiffRow, "new_description_en" | "new_description_jp">>>();
+
+  const [spellBaseDatMade, { refetch: refetchSpellBaseDatMade }] = createResource(
+    () => getProjectFolder(),
+    async (projectFolder) => {
+      if (!projectFolder) {
+        return false;
+      }
+      return unwrap(await isSpellDatMadeInProject());
+    },
+  );
 
   const displayedRows = createMemo(() => {
     const filterText = tableFilter().trim().toLowerCase();
@@ -251,17 +381,121 @@ function SpellDiffTool() {
     return rows.filter((row) => rowMatchesFilter(row, filterText));
   });
 
+  const spellEditorColumnCount = createMemo(() =>
+    1 +
+    (showNamesColumn() ? 1 : 0) +
+    (showTimingColumns() ? 3 : 0) +
+    (showValidTargetsColumn() ? 1 : 0) +
+    (showDescriptionsColumn() ? 2 : 0) +
+    (showLevelColumn() ? 1 : 0)
+  );
+
+  const virtualLayout = createMemo(() => {
+    rowsVersion();
+    tableFilter();
+    const descriptionsVisible = showDescriptionsColumn();
+    const levelVisible = showLevelColumn();
+    const validTargetsVisible = showValidTargetsColumn();
+    const currentRows = untrack(() => displayedRows().slice());
+    const tableWidth = Math.max(640, tableViewportWidth());
+    const activeColumnWeight =
+      INDEX_COLUMN_WEIGHT +
+      (showNamesColumn() ? NAMES_COLUMN_WEIGHT : 0) +
+      (showTimingColumns() ? MP_COLUMN_WEIGHT + CAST_COLUMN_WEIGHT + RECAST_COLUMN_WEIGHT : 0) +
+      (validTargetsVisible ? VALID_TARGETS_COLUMN_WEIGHT : 0) +
+      (descriptionsVisible ? DESCRIPTION_COLUMN_WEIGHT * 2 : 0) +
+      (levelVisible ? LEVEL_COLUMN_WEIGHT : 0);
+    const widthForWeight = (weight: number, minimumWidth: number) =>
+      Math.max(minimumWidth, tableWidth * (weight / activeColumnWeight) - 24);
+    const descriptionColumnWidth = widthForWeight(DESCRIPTION_COLUMN_WEIGHT, 120);
+    const levelColumnWidth = widthForWeight(LEVEL_COLUMN_WEIGHT, 84);
+    const enCharsPerLine = Math.max(12, Math.floor(descriptionColumnWidth / 7.2));
+    const jpCharsPerLine = Math.max(8, Math.floor(descriptionColumnWidth / 13));
+    const levelCharsPerLine = Math.max(8, Math.floor(levelColumnWidth / 8.8));
+
+    const offsets = [0];
+    const metricsByRow = new Map<number, typeof DEFAULT_ROW_METRICS>();
+
+    for (const row of currentRows) {
+      const descriptionEnLines = descriptionsVisible
+        ? estimateWrappedLines(row.new_description_en ?? row.old_description_en, enCharsPerLine)
+        : 1;
+      const descriptionJpLines = descriptionsVisible
+        ? estimateWrappedLines(row.new_description_jp ?? row.old_description_jp, jpCharsPerLine)
+        : 1;
+      const levelLines = levelVisible
+        ? estimateWrappedLines(formatLevels(row.new_level_required ?? row.old_level_required ?? null), levelCharsPerLine)
+        : 1;
+      const targetLines = validTargetsVisible
+        ? Math.ceil(validTargetOptionsForValues(row.old_valid_targets, row.new_valid_targets).length / 3)
+        : 1;
+
+      const descriptionEnHeight = Math.max(TEXTAREA_MIN_HEIGHT_PX, descriptionEnLines * TEXTAREA_LINE_HEIGHT_PX + TEXTAREA_VERTICAL_CHROME_PX + TEXTAREA_WRAP_SAFETY_PX);
+      const descriptionJpHeight = Math.max(TEXTAREA_MIN_HEIGHT_PX, descriptionJpLines * TEXTAREA_LINE_HEIGHT_PX + TEXTAREA_VERTICAL_CHROME_PX + TEXTAREA_WRAP_SAFETY_PX);
+      const levelHeight = Math.max(TEXTAREA_MIN_HEIGHT_PX, levelLines * TEXTAREA_LINE_HEIGHT_PX + TEXTAREA_VERTICAL_CHROME_PX + TEXTAREA_WRAP_SAFETY_PX + LEVEL_EXTRA_HEIGHT_PX);
+      const validTargetsHeight = Math.max(TEXTAREA_MIN_HEIGHT_PX, targetLines * VALID_TARGET_ROW_HEIGHT_PX + TEXTAREA_VERTICAL_CHROME_PX);
+      const controlHeight = Math.max(
+        MIN_VIRTUAL_ROW_HEIGHT_PX,
+        descriptionEnHeight,
+        descriptionJpHeight,
+        validTargetsHeight,
+        levelHeight,
+      );
+      const rowHeight = controlHeight + TEXTAREA_ROW_PADDING_PX;
+
+      metricsByRow.set(row.row, {
+        descriptionEnHeight: controlHeight,
+        descriptionJpHeight: controlHeight,
+        validTargetsHeight: controlHeight,
+        levelHeight: controlHeight,
+        rowHeight,
+      });
+      offsets.push(offsets[offsets.length - 1] + rowHeight);
+    }
+
+    return { offsets, metricsByRow, totalHeight: offsets[offsets.length - 1] ?? 0 };
+  });
+
+  const indexForOffset = (offset: number) => {
+    const offsets = virtualLayout().offsets;
+    if (offsets.length <= 1) {
+      return 0;
+    }
+
+    let low = 0;
+    let high = offsets.length - 2;
+    while (low < high) {
+      const mid = Math.floor((low + high) / 2);
+      if (offsets[mid + 1] <= offset) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+    return low;
+  };
+
   const virtualWindow = createMemo(() => {
     const totalRows = displayedRows().length;
-    const rowHeight = VIRTUAL_ROW_HEIGHT_PX;
+    const layout = virtualLayout();
+    const offsets = layout.offsets;
     const viewportHeight = tableViewportHeight();
     const top = scrollTop();
 
-    const visibleRowCount = Math.max(1, Math.ceil(viewportHeight / rowHeight));
-    const start = Math.max(0, Math.floor(top / rowHeight) - VIRTUAL_OVERSCAN_ROWS);
-    const end = Math.min(totalRows, start + visibleRowCount + VIRTUAL_OVERSCAN_ROWS * 2);
-    const topPadding = start * rowHeight;
-    const bottomPadding = Math.max(0, (totalRows - end) * rowHeight);
+    if (totalRows === 0) {
+      return { start: 0, end: 0, topPadding: 0, bottomPadding: 0 };
+    }
+
+    const visibleStart = indexForOffset(top);
+    let visibleEnd = visibleStart;
+    while (visibleEnd < totalRows && offsets[visibleEnd] < top + viewportHeight) {
+      visibleEnd += 1;
+    }
+
+    const start = Math.max(0, visibleStart - VIRTUAL_OVERSCAN_ROWS);
+    const end = Math.min(totalRows, visibleEnd + VIRTUAL_OVERSCAN_ROWS);
+    const topPadding = offsets[start] ?? 0;
+    const bottomPadding = Math.max(0, layout.totalHeight - (offsets[end] ?? layout.totalHeight));
 
     return { start, end, topPadding, bottomPadding };
   });
@@ -271,9 +505,49 @@ function SpellDiffTool() {
     return displayedRows().slice(start, end);
   });
 
+  const rowWithDescriptionDrafts = (row: SpellDiffRow): SpellDiffRow => {
+    const draft = descriptionDrafts.get(row.row);
+    if (!draft) {
+      return row;
+    }
+
+    return {
+      ...row,
+      new_description_en: draft.new_description_en ?? row.new_description_en,
+      new_description_jp: draft.new_description_jp ?? row.new_description_jp,
+    };
+  };
+
+  const rowIsEdited = (row: SpellDiffRow) => {
+    const rowWithDrafts = rowWithDescriptionDrafts(row);
+    return (
+      (rowWithDrafts.old_name ?? null) !== (rowWithDrafts.new_name ?? null) ||
+      (rowWithDrafts.old_name_jp ?? null) !== (rowWithDrafts.new_name_jp ?? null) ||
+      (rowWithDrafts.old_description_en ?? null) !== (rowWithDrafts.new_description_en ?? null) ||
+      (rowWithDrafts.old_description_jp ?? null) !== (rowWithDrafts.new_description_jp ?? null) ||
+      !stringListsEqual(rowWithDrafts.old_valid_targets, rowWithDrafts.new_valid_targets) ||
+      (rowWithDrafts.old_mp_cost ?? null) !== (rowWithDrafts.new_mp_cost ?? null) ||
+      (rowWithDrafts.old_cast_time ?? null) !== (rowWithDrafts.new_cast_time ?? null) ||
+      (rowWithDrafts.old_recast_time ?? null) !== (rowWithDrafts.new_recast_time ?? null) ||
+      !spellLevelsEqual(rowWithDrafts.old_level_required, rowWithDrafts.new_level_required)
+    );
+  };
+
+  const editedRowIds = createMemo(() => {
+    rowsVersion();
+    const edited = new Set<number>();
+    for (const row of rows) {
+      if (rowIsEdited(row)) {
+        edited.add(row.row);
+      }
+    }
+    return edited;
+  });
+
   const resetLoadedRows = () => {
     setRows([]);
     setRowIndexById(new Map());
+    descriptionDrafts.clear();
     for (const key of Object.keys(levelDrafts)) {
       delete levelDrafts[Number(key)];
     }
@@ -286,12 +560,20 @@ function SpellDiffTool() {
       return spellPathFromProject;
     }
 
-    const ffxiRoot = getDatFolder();
-    if (ffxiRoot) {
-      return `${ffxiRoot.replaceAll("\\", "/").replace(/\/+$/, "")}/${SPELL_RELATIVE_PATH}`;
-    }
-
     return "";
+  });
+
+  const canLoadSpellFile = createMemo(() =>
+    !!getProjectFolder() && !!spellBaseDatMade() && pathIsWithinRoot(spellPath(), getProjectFolder())
+  );
+  const pathStatusText = createMemo(() => {
+    if (!getProjectFolder()) {
+      return "Set a Project Folder so Kraken can stage and save spell DAT edits.";
+    }
+    if (!spellBaseDatMade()) {
+      return "This editor only loads the spell DAT from the Project Folder. Click Make Base Spell DAT first so Kraken never edits against retail files.";
+    }
+    return "This editor loads and saves the spell DAT from the Project Folder.";
   });
 
   const setSpellFile = (path: string) => {
@@ -304,7 +586,14 @@ function SpellDiffTool() {
     if (!tableContainerRef) {
       return;
     }
-    setTableViewportHeight(tableContainerRef.clientHeight || 480);
+    const nextHeight = tableContainerRef.clientHeight || 480;
+    const nextWidth = tableContainerRef.clientWidth || 960;
+    const widthChanged = Math.abs(nextWidth - tableViewportWidth()) > 1;
+    if (widthChanged) {
+      setRowsVersion((version) => version + 1);
+    }
+    setTableViewportHeight(nextHeight);
+    setTableViewportWidth(nextWidth);
     setScrollTop(tableContainerRef.scrollTop || 0);
   };
 
@@ -319,9 +608,45 @@ function SpellDiffTool() {
     });
   };
 
+  const scheduleTableMeasurement = () => {
+    if (tableMeasureFrame !== 0) {
+      return;
+    }
+
+    tableMeasureFrame = window.requestAnimationFrame(() => {
+      tableMeasureFrame = 0;
+      syncTableViewport();
+    });
+  };
+
+  const refreshRowMetrics = () => {
+    setRowsVersion((version) => version + 1);
+  };
+
   const loadSpellData = async () => {
+    if (!getProjectFolder()) {
+      await showMessage("Set a Project Folder first so Kraken can stage and save spell DAT edits.", {
+        title: "Project Folder Required",
+        kind: "warning",
+      });
+      return;
+    }
+    if (!spellBaseDatMade()) {
+      await showMessage("Make the Base Spell DAT first. The Spell Editor only loads DATs from the Project Folder so Kraken never edits your retail files.", {
+        title: "Base DAT Required",
+        kind: "warning",
+      });
+      return;
+    }
     if (!spellPath()) {
       await showMessage("Select the spell DAT/YAML file first.", { title: "Load Blocked", kind: "warning" });
+      return;
+    }
+    if (!pathIsWithinRoot(spellPath(), getProjectFolder())) {
+      await showMessage("The Spell Editor only loads spell DATs from the Project Folder. Click Make Base Spell DAT first, then reload the project copy.", {
+        title: "Project Copy Required",
+        kind: "warning",
+      });
       return;
     }
 
@@ -333,6 +658,10 @@ function SpellDiffTool() {
           ...row,
           choice: "New",
           new_name: row.new_name ?? row.old_name,
+          new_name_jp: row.new_name_jp ?? row.old_name_jp,
+          new_description_en: row.new_description_en ?? row.old_description_en,
+          new_description_jp: row.new_description_jp ?? row.old_description_jp,
+          new_valid_targets: row.new_valid_targets ?? row.old_valid_targets ?? [],
           new_index: row.new_index ?? row.old_index,
           new_mp_cost: row.new_mp_cost ?? row.old_mp_cost,
           new_cast_time: row.new_cast_time ?? row.old_cast_time,
@@ -347,10 +676,39 @@ function SpellDiffTool() {
       for (const key of Object.keys(levelDrafts)) {
         delete levelDrafts[Number(key)];
       }
+      descriptionDrafts.clear();
     } catch (err) {
       await showMessage(`${err}`, { title: "Load Error", kind: "error" });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const makeBaseSpellDat = async () => {
+    if (!getProjectFolder()) {
+      await showMessage("Set a Project Folder first so Kraken knows where to place the copied spell DAT.", {
+        title: "Project Folder Required",
+        kind: "warning",
+      });
+      return;
+    }
+
+    setMakingBaseDat(true);
+    try {
+      const copiedPath = unwrap(await copySpellDatToProject());
+      await refetchSpellBaseDatMade();
+      batch(() => {
+        setSpellFile(copiedPath);
+        setLastNotice("Copied base spell DAT into Project Folder.");
+      });
+      await showMessage(`Copied base spell DAT into Project Folder.\n${copiedPath}`, {
+        title: "Base DAT Ready",
+        kind: "info",
+      });
+    } catch (err) {
+      await showMessage(`${err}`, { title: "Copy Error", kind: "error" });
+    } finally {
+      setMakingBaseDat(false);
     }
   };
 
@@ -369,11 +727,13 @@ function SpellDiffTool() {
   });
 
   createEffect(() => {
-    if (spellPath()) {
+    const preferred = preferredSpellPath();
+    if (!preferred) {
       return;
     }
-
-    setSpellPath(preferredSpellPath());
+    if (!spellPath() || !pathIsWithinRoot(spellPath(), getProjectFolder())) {
+      setSpellPath(preferred);
+    }
   });
 
   createEffect(() => {
@@ -410,9 +770,25 @@ function SpellDiffTool() {
     }, 250);
   });
 
+  createEffect(() => {
+    rows.length;
+    tableFilter();
+    rowsVersion();
+
+    if (typeof window !== "undefined") {
+      scheduleTableMeasurement();
+    }
+  });
+
   onCleanup(() => {
     if (persistStateTimer !== undefined) {
       window.clearTimeout(persistStateTimer);
+    }
+    if (scrollFrame !== 0) {
+      window.cancelAnimationFrame(scrollFrame);
+    }
+    if (tableMeasureFrame !== 0) {
+      window.cancelAnimationFrame(tableMeasureFrame);
     }
   });
 
@@ -422,14 +798,11 @@ function SpellDiffTool() {
     const handleResize = () => syncTableViewport();
     window.addEventListener("resize", handleResize);
 
-    if (rows.length === 0 && spellPath()) {
+    if (rows.length === 0 && canLoadSpellFile()) {
       void loadSpellData();
     }
 
     return () => {
-      if (scrollFrame !== 0) {
-        window.cancelAnimationFrame(scrollFrame);
-      }
       window.removeEventListener("resize", handleResize);
     };
   });
@@ -464,7 +837,59 @@ function SpellDiffTool() {
     }
 
     setRows(rowIndex, key, Math.trunc(parsed));
-    setRowsVersion((version) => version + 1);
+  };
+
+  const setRowNewString = (
+    rowId: number,
+    key: "new_name" | "new_name_jp" | "new_description_en" | "new_description_jp",
+    value: string,
+  ) => {
+    const rowIndex = rowIndexById().get(rowId);
+    if (rowIndex === undefined) {
+      return;
+    }
+
+    setRows(rowIndex, key, value);
+  };
+
+  const setRowNewValidTargets = (rowId: number, values: string[]) => {
+    const rowIndex = rowIndexById().get(rowId);
+    if (rowIndex === undefined) {
+      return;
+    }
+
+    setRows(rowIndex, "new_valid_targets", normalizeStringList(values));
+  };
+
+  const toggleRowNewValidTarget = (row: SpellDiffRow, target: string, enabled: boolean) => {
+    const currentValues = normalizeStringList(row.new_valid_targets ?? row.old_valid_targets);
+    const nextValues = enabled
+      ? [...currentValues, target]
+      : currentValues.filter((value) => value !== target);
+    setRowNewValidTargets(row.row, nextValues);
+  };
+
+  const descriptionDraftValue = (row: SpellDiffRow, key: "new_description_en" | "new_description_jp") => {
+    const draft = descriptionDrafts.get(row.row)?.[key];
+    if (typeof draft === "string") {
+      return draft;
+    }
+    return row[key] ?? "";
+  };
+
+  const setDescriptionDraft = (rowId: number, key: "new_description_en" | "new_description_jp", value: string) => {
+    const current = descriptionDrafts.get(rowId) ?? {};
+    current[key] = value;
+    descriptionDrafts.set(rowId, current);
+  };
+
+  const commitDescriptionDraft = (rowId: number, key: "new_description_en" | "new_description_jp") => {
+    const draft = descriptionDrafts.get(rowId)?.[key];
+    if (typeof draft !== "string") {
+      return;
+    }
+
+    setRowNewString(rowId, key, draft);
   };
 
   const levelInputValue = (row: SpellDiffRow) => {
@@ -505,9 +930,56 @@ function SpellDiffTool() {
     setRowsVersion((version) => version + 1);
   };
 
+  const resetAllRowsToOriginal = async () => {
+    const confirmed = await showConfirm(
+      "Are you sure you want to reset ALL loaded spell changes? This cannot be reversed.",
+      {
+        title: "Reset All Spell Changes",
+        kind: "warning",
+        okLabel: "Reset All",
+        cancelLabel: "Cancel",
+      },
+    );
+    if (confirmed !== true) {
+      setLastNotice("Cancelled Reset All.");
+      return;
+    }
+
+    const resetRows = rows.map((row) => ({
+      ...row,
+      new_index: row.old_index,
+      new_name: row.old_name,
+      new_name_jp: row.old_name_jp,
+      new_description_en: row.old_description_en,
+      new_description_jp: row.old_description_jp,
+      new_valid_targets: row.old_valid_targets,
+      new_mp_cost: row.old_mp_cost,
+      new_cast_time: row.old_cast_time,
+      new_recast_time: row.old_recast_time,
+      new_level_required: row.old_level_required,
+    }));
+
+    batch(() => {
+      descriptionDrafts.clear();
+      for (const key of Object.keys(levelDrafts)) {
+        delete levelDrafts[Number(key)];
+      }
+      setRows(() => resetRows);
+      setLastNotice(`Reset ${resetRows.length} spell rows to original values.`);
+      setRowsVersion((version) => version + 1);
+    });
+  };
+
   const saveEdited = async () => {
     if (rows.length === 0) {
       await showMessage("Load the spell file first.", { title: "Save Blocked", kind: "warning" });
+      return;
+    }
+    if (!pathIsWithinRoot(spellPath(), getProjectFolder())) {
+      await showMessage("The Spell Editor only saves from the Project Folder copy. Click Make Base Spell DAT first, then reload the project copy.", {
+        title: "Project Copy Required",
+        kind: "warning",
+      });
       return;
     }
 
@@ -523,7 +995,7 @@ function SpellDiffTool() {
     const outYamlPath = autoPaths.yamlPath;
     const outDatPath: string | null = autoPaths.datPath;
 
-    const payloadRows = rows.map((row) => ({ ...row, choice: "New" as const }));
+    const payloadRows = rows.map((row) => ({ ...rowWithDescriptionDrafts(row), choice: "New" as const }));
 
     setSaving(true);
     try {
@@ -563,16 +1035,36 @@ function SpellDiffTool() {
 
       <div class="mt-3 flex flex-col gap-2">
         <div class="rounded-md border border-slate-700/70 bg-slate-900/20 p-2 flex flex-col gap-2">
+          <div class="rounded-md border border-amber-700/60 bg-amber-950/15 px-3 py-2">
+            <div class="text-[13px] font-semibold uppercase tracking-[0.08em] text-amber-200">Direct Edit Workflow</div>
+            <div class="mt-1 text-[13px] text-amber-100">
+              This editor uses a copied spell DAT in the Project Folder so Kraken never edits your retail FFXI files directly.
+            </div>
+            <div class="mt-3">
+              <button
+                class={`${compactButtonClass()} ${spellBaseDatMade() ? "opacity-60 cursor-not-allowed" : ""}`}
+                disabled={isLoading() || isSaving() || isMakingBaseDat() || !getProjectFolder() || !!spellBaseDatMade()}
+                onclick={makeBaseSpellDat}
+              >
+                {isMakingBaseDat() ? "Making base spell DAT..." : spellBaseDatMade() ? "Base Spell DAT Made" : "Make Base Spell DAT"}
+              </button>
+            </div>
+          </div>
+
           <div class="min-w-0 flex items-center gap-2">
-            <button class={compactButtonClass()} onclick={pickFile}>Spell DAT/YAML</button>
+            <button class={compactButtonClass()} disabled={!getProjectFolder()} onclick={pickFile}>Spell DAT/YAML</button>
             <span class="font-mono text-xs truncate" title={spellPath() || "Not selected"}>
               {spellPath() || "Not selected"}
             </span>
           </div>
 
+          <div class="text-[11px] text-slate-400">
+            {pathStatusText()}
+          </div>
+
           <div class="flex flex-wrap items-center gap-2">
-            <button class={compactButtonClass()} disabled={isLoading()} onclick={loadSpellData}>
-              {isLoading() ? "Loading..." : "Load"}
+            <button class={compactButtonClass()} disabled={isLoading() || isSaving() || isMakingBaseDat() || !canLoadSpellFile()} onclick={loadSpellData}>
+              {isLoading() ? "Reloading..." : "Reload"}
             </button>
 
             <button class={compactButtonClass()} disabled={isSaving() || rows.length === 0} onclick={saveEdited}>
@@ -589,97 +1081,265 @@ function SpellDiffTool() {
             </Show>
           </div>
 
+          <Show when={rows.length > 0}>
+            <div class="flex flex-wrap items-center gap-1 text-xs">
+              <span class="mr-1 text-slate-400">Hide columns:</span>
+              <button class={compactButtonClass(showNamesColumn())} onClick={() => {
+                setShowNamesColumn((visible) => !visible);
+                refreshRowMetrics();
+              }}>Names</button>
+              <button class={compactButtonClass(showTimingColumns())} onClick={() => {
+                setShowTimingColumns((visible) => !visible);
+                refreshRowMetrics();
+              }}>Timing</button>
+              <button class={compactButtonClass(showValidTargetsColumn())} onClick={() => {
+                setShowValidTargetsColumn((visible) => !visible);
+                refreshRowMetrics();
+              }}>Targets</button>
+              <button class={compactButtonClass(showDescriptionsColumn())} onClick={() => {
+                setShowDescriptionsColumn((visible) => !visible);
+                refreshRowMetrics();
+              }}>Descriptions</button>
+              <button class={compactButtonClass(showLevelColumn())} onClick={() => {
+                setShowLevelColumn((visible) => !visible);
+                refreshRowMetrics();
+              }}>Level</button>
+            </div>
+          </Show>
+
           <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
             <Show when={lastNotice()}>
               <div class="italic text-slate-300">{lastNotice()}</div>
             </Show>
             <Show when={rows.length > 0}>
-              <div class="text-slate-300">Loaded spell entries: {rows.length}</div>
+              <div class="flex items-center gap-2">
+                <div class="text-slate-300">
+                  Loaded: {rows.length} | Edited: {editedRowIds().size}
+                </div>
+                <button
+                  class={compactButtonClass()}
+                  disabled={editedRowIds().size === 0}
+                  onClick={() => {
+                    void resetAllRowsToOriginal();
+                  }}
+                >
+                  Reset All
+                </button>
+              </div>
             </Show>
           </div>
         </div>
 
         <Show when={rows.length > 0}>
           <div
-            class="max-h-[70vh] overflow-auto border border-slate-700 rounded-md"
+            class="max-h-[70vh] overflow-y-auto overflow-x-hidden border border-slate-700 rounded-md"
             ref={(el) => {
               tableContainerRef = el;
             }}
             onScroll={onTableScroll}
           >
-            <table class="w-full">
+            <table class="w-full table-fixed">
+              <colgroup>
+                <col style={{ width: `${INDEX_COLUMN_WEIGHT}%` }} />
+                <Show when={showNamesColumn()}>
+                  <col style={{ width: `${NAMES_COLUMN_WEIGHT}%` }} />
+                </Show>
+                <Show when={showTimingColumns()}>
+                  <col style={{ width: `${MP_COLUMN_WEIGHT}%` }} />
+                  <col style={{ width: `${CAST_COLUMN_WEIGHT}%` }} />
+                  <col style={{ width: `${RECAST_COLUMN_WEIGHT}%` }} />
+                </Show>
+                <Show when={showValidTargetsColumn()}>
+                  <col style={{ width: `${VALID_TARGETS_COLUMN_WEIGHT}%` }} />
+                </Show>
+                <Show when={showDescriptionsColumn()}>
+                  <col style={{ width: `${DESCRIPTION_COLUMN_WEIGHT}%` }} />
+                  <col style={{ width: `${DESCRIPTION_COLUMN_WEIGHT}%` }} />
+                </Show>
+                <Show when={showLevelColumn()}>
+                  <col style={{ width: `${LEVEL_COLUMN_WEIGHT}%` }} />
+                </Show>
+              </colgroup>
               <thead class="sticky top-0 z-10">
                 <tr>
-                  <th>Name</th>
                   <th>Index</th>
-                  <th>MP Cost</th>
-                  <th>Cast Time</th>
-                  <th>Recast Time</th>
-                  <th>Level Required</th>
+                  <Show when={showNamesColumn()}>
+                    <th>Names</th>
+                  </Show>
+                  <Show when={showTimingColumns()}>
+                    <th>MP</th>
+                    <th>Cast</th>
+                    <th>Recast</th>
+                  </Show>
+                  <Show when={showValidTargetsColumn()}>
+                    <th>Valid Targets</th>
+                  </Show>
+                  <Show when={showDescriptionsColumn()}>
+                    <th>Description (EN)</th>
+                    <th>Description (JP)</th>
+                  </Show>
+                  <Show when={showLevelColumn()}>
+                    <th>Level</th>
+                  </Show>
                 </tr>
               </thead>
               <tbody>
                 <Show when={virtualWindow().topPadding > 0}>
                   <tr>
-                    <td colSpan={SPELL_EDITOR_COLUMN_COUNT} style={{ height: `${virtualWindow().topPadding}px`, padding: "0", border: "0" }}></td>
+                    <td colSpan={spellEditorColumnCount()} style={{ height: `${virtualWindow().topPadding}px`, padding: "0", border: "0" }}></td>
                   </tr>
                 </Show>
 
                 <For each={visibleRows()}>
-                  {(row) => (
+                  {(row) => {
+                    return (
                     <tr>
-                      <td class="max-w-[18rem] truncate" title={row.new_name ?? row.old_name ?? "-"}>
-                        {row.new_name ?? row.old_name ?? "-"}
-                      </td>
-                      <td class="font-mono">{row.new_index ?? row.old_index ?? "-"}</td>
-                      <td class={newFieldClass((row.old_mp_cost ?? null) !== (row.new_mp_cost ?? null))}>
-                        <input
-                          class={`hide-spin-buttons m-0 !w-[10ch] min-w-[10ch] max-w-[10ch] py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_mp_cost ?? null) !== (row.new_mp_cost ?? null))}`}
-                          type="number"
-                          min={0}
-                          step={1}
-                          value={row.new_mp_cost ?? ""}
-                          onInput={(e) => setRowNewU32(row.row, "new_mp_cost", e.currentTarget.value)}
-                        />
-                      </td>
-                      <td class={newFieldClass((row.old_cast_time ?? null) !== (row.new_cast_time ?? null))}>
-                        <input
-                          class={`hide-spin-buttons m-0 !w-[10ch] min-w-[10ch] max-w-[10ch] py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_cast_time ?? null) !== (row.new_cast_time ?? null))}`}
-                          type="number"
-                          min={0}
-                          step={1}
-                          value={row.new_cast_time ?? ""}
-                          onInput={(e) => setRowNewU32(row.row, "new_cast_time", e.currentTarget.value)}
-                        />
-                      </td>
-                      <td class={newFieldClass((row.old_recast_time ?? null) !== (row.new_recast_time ?? null))}>
-                        <input
-                          class={`hide-spin-buttons m-0 !w-[10ch] min-w-[10ch] max-w-[10ch] py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_recast_time ?? null) !== (row.new_recast_time ?? null))}`}
-                          type="number"
-                          min={0}
-                          step={1}
-                          value={row.new_recast_time ?? ""}
-                          onInput={(e) => setRowNewU32(row.row, "new_recast_time", e.currentTarget.value)}
-                        />
-                      </td>
-                      <td class={newFieldClass(formatLevels(row.old_level_required ?? null) !== formatLevels(row.new_level_required ?? null))}>
-                        <input
-                          class={`m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(formatLevels(row.old_level_required ?? null) !== formatLevels(row.new_level_required ?? null))}`}
-                          type="text"
-                          value={levelInputValue(row)}
-                          onInput={(e) => setLevelDraft(row.row, e.currentTarget.value)}
-                          onBlur={() => {
-                            void applyLevelDraft(row.row);
-                          }}
-                        />
-                      </td>
+                      {(() => {
+                        const rowMetrics = virtualLayout().metricsByRow.get(row.row) ?? DEFAULT_ROW_METRICS;
+                        const currentValidTargets = normalizeStringList(row.new_valid_targets ?? row.old_valid_targets);
+                        const validTargetsChanged = !stringListsEqual(row.old_valid_targets, row.new_valid_targets);
+                        return (
+                          <>
+                      <td class="font-mono truncate">{row.new_index ?? row.old_index ?? "-"}</td>
+                      <Show when={showNamesColumn()}>
+                        <td class="min-w-0">
+                          <div class="flex min-w-0 flex-col gap-1">
+                            <input
+                              class={`m-0 w-full py-0 px-2 text-sm rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_name ?? null) !== (row.new_name ?? null))}`}
+                              type="text"
+                              value={row.new_name ?? ""}
+                              placeholder="EN"
+                              title={row.new_name ?? row.old_name ?? ""}
+                              onInput={(e) => setRowNewString(row.row, "new_name", e.currentTarget.value)}
+                            />
+                            <input
+                              class={`m-0 w-full py-0 px-2 text-sm rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_name_jp ?? null) !== (row.new_name_jp ?? null))}`}
+                              type="text"
+                              value={row.new_name_jp ?? ""}
+                              placeholder="JP"
+                              title={row.new_name_jp ?? row.old_name_jp ?? ""}
+                              onInput={(e) => setRowNewString(row.row, "new_name_jp", e.currentTarget.value)}
+                            />
+                          </div>
+                        </td>
+                      </Show>
+                      <Show when={showTimingColumns()}>
+                        <td class={newFieldClass((row.old_mp_cost ?? null) !== (row.new_mp_cost ?? null))}>
+                          <input
+                            class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_mp_cost ?? null) !== (row.new_mp_cost ?? null))}`}
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={row.new_mp_cost ?? ""}
+                            onInput={(e) => setRowNewU32(row.row, "new_mp_cost", e.currentTarget.value)}
+                          />
+                        </td>
+                        <td class={newFieldClass((row.old_cast_time ?? null) !== (row.new_cast_time ?? null))}>
+                          <input
+                            class={`hide-spin-buttons m-0 w-full py-0 px-1 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_cast_time ?? null) !== (row.new_cast_time ?? null))}`}
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={row.new_cast_time ?? ""}
+                            onInput={(e) => setRowNewU32(row.row, "new_cast_time", e.currentTarget.value)}
+                          />
+                        </td>
+                        <td class={newFieldClass((row.old_recast_time ?? null) !== (row.new_recast_time ?? null))}>
+                          <input
+                            class={`hide-spin-buttons m-0 w-full py-0 px-1 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_recast_time ?? null) !== (row.new_recast_time ?? null))}`}
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={row.new_recast_time ?? ""}
+                            onInput={(e) => setRowNewU32(row.row, "new_recast_time", e.currentTarget.value)}
+                          />
+                        </td>
+                      </Show>
+                      <Show when={showValidTargetsColumn()}>
+                        <td class={newFieldClass(validTargetsChanged)}>
+                          <div
+                            class="grid grid-cols-3 gap-x-2 gap-y-0.5 overflow-hidden rounded-md border border-slate-500 px-2 py-1 text-[11px] leading-4"
+                            style={{ height: `${rowMetrics.validTargetsHeight}px` }}
+                          >
+                            <For each={validTargetOptionsForValues(row.old_valid_targets, row.new_valid_targets)}>
+                              {(target) => (
+                                <label class="m-0 flex min-w-0 items-center gap-1 font-normal normal-case text-slate-100" title={target}>
+                                  <input
+                                    class="!m-0 !h-3 !w-3 shrink-0"
+                                    type="checkbox"
+                                    checked={currentValidTargets.includes(target)}
+                                    onChange={(e) => toggleRowNewValidTarget(row, target, e.currentTarget.checked)}
+                                  />
+                                  <span class="truncate">{validTargetLabel(target)}</span>
+                                </label>
+                              )}
+                            </For>
+                          </div>
+                        </td>
+                      </Show>
+                      <Show when={showDescriptionsColumn()}>
+                        <td class={newFieldClass((row.old_description_en ?? null) !== (row.new_description_en ?? null))}>
+                          <textarea
+                            class={`m-0 w-full overflow-hidden py-0.5 px-2 text-sm leading-5 resize-none rounded-md border border-slate-500 bg-slate-800 text-slate-100 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_description_en ?? null) !== (row.new_description_en ?? null))}`}
+                            style={{ height: `${rowMetrics.descriptionEnHeight}px` }}
+                            ref={(el) => {
+                              el.value = descriptionDraftValue(row, "new_description_en");
+                            }}
+                            title={row.new_description_en ?? row.old_description_en ?? ""}
+                            onInput={(e) => {
+                              setDescriptionDraft(row.row, "new_description_en", e.currentTarget.value);
+                            }}
+                            onBlur={() => {
+                              commitDescriptionDraft(row.row, "new_description_en");
+                              refreshRowMetrics();
+                            }}
+                          />
+                        </td>
+                        <td class={newFieldClass((row.old_description_jp ?? null) !== (row.new_description_jp ?? null))}>
+                          <textarea
+                            class={`m-0 w-full overflow-hidden py-0.5 px-2 text-sm leading-5 resize-none rounded-md border border-slate-500 bg-slate-800 text-slate-100 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_description_jp ?? null) !== (row.new_description_jp ?? null))}`}
+                            style={{ height: `${rowMetrics.descriptionJpHeight}px` }}
+                            ref={(el) => {
+                              el.value = descriptionDraftValue(row, "new_description_jp");
+                            }}
+                            title={row.new_description_jp ?? row.old_description_jp ?? ""}
+                            onInput={(e) => {
+                              setDescriptionDraft(row.row, "new_description_jp", e.currentTarget.value);
+                            }}
+                            onBlur={() => {
+                              commitDescriptionDraft(row.row, "new_description_jp");
+                              refreshRowMetrics();
+                            }}
+                          />
+                        </td>
+                      </Show>
+                      <Show when={showLevelColumn()}>
+                        <td class={newFieldClass(formatLevels(row.old_level_required ?? null) !== formatLevels(row.new_level_required ?? null))}>
+                          <textarea
+                            class={`m-0 w-full overflow-hidden py-0.5 px-2 text-sm font-mono leading-5 resize-none rounded-md border border-slate-500 bg-slate-800 text-slate-100 focus:border-slate-300 focus:outline-none ${newFieldClass(formatLevels(row.old_level_required ?? null) !== formatLevels(row.new_level_required ?? null))}`}
+                            style={{ height: `${rowMetrics.levelHeight}px` }}
+                            value={levelInputValue(row)}
+                            onInput={(e) => {
+                              setLevelDraft(row.row, e.currentTarget.value);
+                            }}
+                            onBlur={() => {
+                              void applyLevelDraft(row.row);
+                              refreshRowMetrics();
+                            }}
+                          />
+                        </td>
+                      </Show>
+                          </>
+                        );
+                      })()}
                     </tr>
-                  )}
+                    );
+                  }}
                 </For>
 
                 <Show when={virtualWindow().bottomPadding > 0}>
                   <tr>
-                    <td colSpan={SPELL_EDITOR_COLUMN_COUNT} style={{ height: `${virtualWindow().bottomPadding}px`, padding: "0", border: "0" }}></td>
+                    <td colSpan={spellEditorColumnCount()} style={{ height: `${virtualWindow().bottomPadding}px`, padding: "0", border: "0" }}></td>
                   </tr>
                 </Show>
               </tbody>

@@ -33,6 +33,24 @@ export async function areAllItemDatsMadeInProject(): Promise<Result<boolean, any
     }
 }
 
+export async function copySpellDatToProject(): Promise<Result<string, any>> {
+    try {
+        return { status: "ok", data: await TAURI_INVOKE("copy_spell_dat_to_project") };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        else return { status: "error", error: e as any };
+    }
+}
+
+export async function isSpellDatMadeInProject(): Promise<Result<boolean, any>> {
+    try {
+        return { status: "ok", data: await TAURI_INVOKE("is_spell_dat_made_in_project") };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        else return { status: "error", error: e as any };
+    }
+}
+
 export async function resolveDatDescriptorPath(
     descriptor: DatDescriptor,
     lang?: DatLanguage,
@@ -165,12 +183,20 @@ export interface SpellDiffRow {
     row: number;
     old_index: number | null;
     old_name: string | null;
+    old_name_jp: string | null;
+    old_description_en: string | null;
+    old_description_jp: string | null;
+    old_valid_targets: string[] | null;
     old_mp_cost: number | null;
     old_cast_time: number | null;
     old_recast_time: number | null;
     old_level_required: Record<string, number> | null;
     new_index: number | null;
     new_name: string | null;
+    new_name_jp: string | null;
+    new_description_en: string | null;
+    new_description_jp: string | null;
+    new_valid_targets: string[] | null;
     new_mp_cost: number | null;
     new_cast_time: number | null;
     new_recast_time: number | null;

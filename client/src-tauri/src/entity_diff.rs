@@ -133,12 +133,20 @@ pub struct SpellDiffRow {
     pub row: u32,
     pub old_index: Option<u32>,
     pub old_name: Option<String>,
+    pub old_name_jp: Option<String>,
+    pub old_description_en: Option<String>,
+    pub old_description_jp: Option<String>,
+    pub old_valid_targets: Option<Vec<String>>,
     pub old_mp_cost: Option<u32>,
     pub old_cast_time: Option<u32>,
     pub old_recast_time: Option<u32>,
     pub old_level_required: Option<HashMap<String, u32>>,
     pub new_index: Option<u32>,
     pub new_name: Option<String>,
+    pub new_name_jp: Option<String>,
+    pub new_description_en: Option<String>,
+    pub new_description_jp: Option<String>,
+    pub new_valid_targets: Option<Vec<String>>,
     pub new_mp_cost: Option<u32>,
     pub new_cast_time: Option<u32>,
     pub new_recast_time: Option<u32>,
@@ -676,15 +684,14 @@ pub fn load_item_editor_rows(
     japanese_path: Option<PathBuf>,
 ) -> Result<Vec<ItemEditorRow>> {
     let english_data = load_item_table(&english_path)?;
-    let japanese_data = japanese_path
-        .as_ref()
-        .map(load_item_table)
-        .transpose()?;
+    let japanese_data = japanese_path.as_ref().map(load_item_table).transpose()?;
 
-    let row_count = english_data
-        .items
-        .len()
-        .max(japanese_data.as_ref().map(|data| data.items.len()).unwrap_or(0));
+    let row_count = english_data.items.len().max(
+        japanese_data
+            .as_ref()
+            .map(|data| data.items.len())
+            .unwrap_or(0),
+    );
 
     let mut rows = Vec::with_capacity(row_count);
     for row_idx in 0..row_count {
@@ -754,12 +761,12 @@ pub fn load_item_editor_rows(
             .and_then(get_item_jobs)
             .or_else(|| japanese_item.and_then(get_item_jobs));
         let old_en_name = english_item.and_then(get_item_name);
-        let old_en_article_type = english_item
-            .and_then(|item| get_item_string_field(item, "article_type"));
-        let old_en_singular_name = english_item
-            .and_then(|item| get_item_string_field(item, "singular_name"));
-        let old_en_plural_name = english_item
-            .and_then(|item| get_item_string_field(item, "plural_name"));
+        let old_en_article_type =
+            english_item.and_then(|item| get_item_string_field(item, "article_type"));
+        let old_en_singular_name =
+            english_item.and_then(|item| get_item_string_field(item, "singular_name"));
+        let old_en_plural_name =
+            english_item.and_then(|item| get_item_string_field(item, "plural_name"));
         let old_en_description = english_item.and_then(get_item_description);
         let old_jp_name = japanese_item.and_then(get_item_name);
         let old_jp_description = japanese_item.and_then(get_item_description);
@@ -899,10 +906,14 @@ pub fn save_item_editor_rows(
         .unwrap_or(0))
 }
 
-pub fn compare_spell_files(old_path: PathBuf, new_path: PathBuf) -> Result<SpellDiffResult> {
+pub fn compare_spell_files_with_text_paths(
+    old_path: PathBuf,
+    new_path: PathBuf,
+    spell_text_paths: Option<SpellTextPaths>,
+) -> Result<SpellDiffResult> {
     let old_data = load_spell_table(&old_path)?;
     let new_data = load_spell_table(&new_path)?;
-    let (spell_names, ability_names) = load_spell_and_ability_name_maps(&old_path, &new_path);
+    let spell_text = load_spell_text_tables(&old_path, &new_path, spell_text_paths.as_ref());
 
     let old_spells = get_spell_entries(&old_data)?.to_vec();
     let new_spells = get_spell_entries(&new_data)?.to_vec();
@@ -922,20 +933,37 @@ pub fn compare_spell_files(old_path: PathBuf, new_path: PathBuf) -> Result<Spell
                     let new_spell = &new_spells[*new_idx];
 
                     let old_index = get_spell_index(old_spell);
-                    let old_name = resolve_spell_name(old_spell, &spell_names, &ability_names);
+                    let old_name = resolve_spell_name(old_spell, &spell_text);
+                    let old_name_jp = lookup_spell_text(&spell_text.spell_names_jp, old_spell);
+                    let old_description_en =
+                        lookup_spell_text(&spell_text.spell_descriptions_en, old_spell);
+                    let old_description_jp =
+                        lookup_spell_text(&spell_text.spell_descriptions_jp, old_spell);
+                    let old_valid_targets = get_spell_valid_targets(old_spell);
                     let old_mp_cost = get_spell_mp_cost(old_spell);
                     let old_cast_time = get_spell_cast_time(old_spell);
                     let old_recast_time = get_spell_recast_time(old_spell);
                     let old_level_required = get_spell_level_required(old_spell);
 
                     let new_index = get_spell_index(new_spell);
-                    let new_name = resolve_spell_name(new_spell, &spell_names, &ability_names);
+                    let new_name = resolve_spell_name(new_spell, &spell_text);
+                    let new_name_jp = lookup_spell_text(&spell_text.spell_names_jp, new_spell);
+                    let new_description_en =
+                        lookup_spell_text(&spell_text.spell_descriptions_en, new_spell);
+                    let new_description_jp =
+                        lookup_spell_text(&spell_text.spell_descriptions_jp, new_spell);
+                    let new_valid_targets = get_spell_valid_targets(new_spell);
                     let new_mp_cost = get_spell_mp_cost(new_spell);
                     let new_cast_time = get_spell_cast_time(new_spell);
                     let new_recast_time = get_spell_recast_time(new_spell);
                     let new_level_required = get_spell_level_required(new_spell);
 
                     let is_changed = old_index != new_index
+                        || old_name != new_name
+                        || old_name_jp != new_name_jp
+                        || old_description_en != new_description_en
+                        || old_description_jp != new_description_jp
+                        || old_valid_targets != new_valid_targets
                         || old_mp_cost != new_mp_cost
                         || old_cast_time != new_cast_time
                         || old_recast_time != new_recast_time
@@ -948,12 +976,20 @@ pub fn compare_spell_files(old_path: PathBuf, new_path: PathBuf) -> Result<Spell
                         row: idx as u32,
                         old_index,
                         old_name,
+                        old_name_jp,
+                        old_description_en,
+                        old_description_jp,
+                        old_valid_targets,
                         old_mp_cost,
                         old_cast_time,
                         old_recast_time,
                         old_level_required,
                         new_index,
                         new_name,
+                        new_name_jp,
+                        new_description_en,
+                        new_description_jp,
+                        new_valid_targets,
                         new_mp_cost,
                         new_cast_time,
                         new_recast_time,
@@ -967,17 +1003,30 @@ pub fn compare_spell_files(old_path: PathBuf, new_path: PathBuf) -> Result<Spell
                     changed_count += 1;
 
                     let old_index = get_spell_index(old_spell);
-
                     SpellDiffRow {
                         row: idx as u32,
                         old_index,
-                        old_name: resolve_spell_name(old_spell, &spell_names, &ability_names),
+                        old_name: resolve_spell_name(old_spell, &spell_text),
+                        old_name_jp: lookup_spell_text(&spell_text.spell_names_jp, old_spell),
+                        old_description_en: lookup_spell_text(
+                            &spell_text.spell_descriptions_en,
+                            old_spell,
+                        ),
+                        old_description_jp: lookup_spell_text(
+                            &spell_text.spell_descriptions_jp,
+                            old_spell,
+                        ),
+                        old_valid_targets: get_spell_valid_targets(old_spell),
                         old_mp_cost: get_spell_mp_cost(old_spell),
                         old_cast_time: get_spell_cast_time(old_spell),
                         old_recast_time: get_spell_recast_time(old_spell),
                         old_level_required: get_spell_level_required(old_spell),
                         new_index: None,
                         new_name: None,
+                        new_name_jp: None,
+                        new_description_en: None,
+                        new_description_jp: None,
+                        new_valid_targets: None,
                         new_mp_cost: None,
                         new_cast_time: None,
                         new_recast_time: None,
@@ -991,17 +1040,30 @@ pub fn compare_spell_files(old_path: PathBuf, new_path: PathBuf) -> Result<Spell
                     changed_count += 1;
 
                     let new_index = get_spell_index(new_spell);
-
                     SpellDiffRow {
                         row: idx as u32,
                         old_index: None,
                         old_name: None,
+                        old_name_jp: None,
+                        old_description_en: None,
+                        old_description_jp: None,
+                        old_valid_targets: None,
                         old_mp_cost: None,
                         old_cast_time: None,
                         old_recast_time: None,
                         old_level_required: None,
                         new_index,
-                        new_name: resolve_spell_name(new_spell, &spell_names, &ability_names),
+                        new_name: resolve_spell_name(new_spell, &spell_text),
+                        new_name_jp: lookup_spell_text(&spell_text.spell_names_jp, new_spell),
+                        new_description_en: lookup_spell_text(
+                            &spell_text.spell_descriptions_en,
+                            new_spell,
+                        ),
+                        new_description_jp: lookup_spell_text(
+                            &spell_text.spell_descriptions_jp,
+                            new_spell,
+                        ),
+                        new_valid_targets: get_spell_valid_targets(new_spell),
                         new_mp_cost: get_spell_mp_cost(new_spell),
                         new_cast_time: get_spell_cast_time(new_spell),
                         new_recast_time: get_spell_recast_time(new_spell),
@@ -1023,15 +1085,32 @@ pub fn compare_spell_files(old_path: PathBuf, new_path: PathBuf) -> Result<Spell
     })
 }
 
-pub fn save_spell_diff(
+pub fn save_spell_diff_with_text_paths(
     old_path: PathBuf,
     new_path: PathBuf,
     rows: Vec<SpellDiffRow>,
     out_yaml_path: PathBuf,
     out_dat_path: Option<PathBuf>,
+    spell_text_paths: Option<SpellTextPaths>,
 ) -> Result<EntityDiffSaveResult> {
     let old_data = load_spell_table(&old_path)?;
     let mut new_data = load_spell_table(&new_path)?;
+    let mut spell_names_en = spell_text_paths
+        .as_ref()
+        .map(|paths| load_dmsg_table(&paths.spell_names_en))
+        .transpose()?;
+    let mut spell_names_jp = spell_text_paths
+        .as_ref()
+        .map(|paths| load_dmsg_table(&paths.spell_names_jp))
+        .transpose()?;
+    let mut spell_descriptions_en = spell_text_paths
+        .as_ref()
+        .map(|paths| load_dmsg_table(&paths.spell_descriptions_en))
+        .transpose()?;
+    let mut spell_descriptions_jp = spell_text_paths
+        .as_ref()
+        .map(|paths| load_dmsg_table(&paths.spell_descriptions_jp))
+        .transpose()?;
 
     let old_spells = get_spell_entries(&old_data)?.to_vec();
     let new_spells = get_spell_entries(&new_data)?.to_vec();
@@ -1103,13 +1182,39 @@ pub fn save_spell_diff(
         {
             set_spell_index(&mut selected_spell, target_index);
         }
+        let target_text_id = get_spell_index(&selected_spell)
+            .or_else(|| get_spell_id(&selected_spell))
+            .or_else(|| row.and_then(|row| row.target_index));
 
-        let chosen_name = row.and_then(|row| match effective_choice {
-            EntityDiffChoice::Old => row.old_name.clone(),
-            EntityDiffChoice::New => row.new_name.clone(),
+        let chosen_valid_targets = row.and_then(|row| match effective_choice {
+            EntityDiffChoice::Old => row.old_valid_targets.clone(),
+            EntityDiffChoice::New => row.new_valid_targets.clone(),
         });
-        if let Some(name) = chosen_name {
-            set_spell_name(&mut selected_spell, name);
+        if let Some(valid_targets) = chosen_valid_targets {
+            set_spell_valid_targets(&mut selected_spell, &valid_targets);
+        }
+
+        if let Some(text_id) = target_text_id {
+            if let (Some(row), Some(table)) = (row, spell_names_en.as_mut()) {
+                if let Some(name) = row.new_name.clone() {
+                    set_dmsg_first_string(table, text_id, name);
+                }
+            }
+            if let (Some(row), Some(table)) = (row, spell_names_jp.as_mut()) {
+                if let Some(name) = row.new_name_jp.clone() {
+                    set_dmsg_first_string(table, text_id, name);
+                }
+            }
+            if let (Some(row), Some(table)) = (row, spell_descriptions_en.as_mut()) {
+                if let Some(description) = row.new_description_en.clone() {
+                    set_dmsg_first_string(table, text_id, description);
+                }
+            }
+            if let (Some(row), Some(table)) = (row, spell_descriptions_jp.as_mut()) {
+                if let Some(description) = row.new_description_jp.clone() {
+                    set_dmsg_first_string(table, text_id, description);
+                }
+            }
         }
 
         let chosen_mp_cost = row.and_then(|row| match effective_choice {
@@ -1174,6 +1279,21 @@ pub fn save_spell_diff(
     } else {
         None
     };
+
+    if let Some(paths) = spell_text_paths {
+        if let Some(table) = spell_names_en {
+            write_dmsg_table(&paths.spell_names_en, &table)?;
+        }
+        if let Some(table) = spell_names_jp {
+            write_dmsg_table(&paths.spell_names_jp, &table)?;
+        }
+        if let Some(table) = spell_descriptions_en {
+            write_dmsg_table(&paths.spell_descriptions_en, &table)?;
+        }
+        if let Some(table) = spell_descriptions_jp {
+            write_dmsg_table(&paths.spell_descriptions_jp, &table)?;
+        }
+    }
 
     Ok(EntityDiffSaveResult {
         written_count: merged_count,
@@ -1246,6 +1366,64 @@ fn load_spell_table(path: &PathBuf) -> Result<Value> {
     }
 
     decode_spell_dat(&bytes)
+}
+
+fn load_dmsg_table(path: &PathBuf) -> Result<DmsgTable> {
+    let is_yaml = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| matches!(value.to_ascii_lowercase().as_str(), "yml" | "yaml"))
+        .unwrap_or(false);
+
+    if is_yaml {
+        let file = File::open(path)?;
+        return Ok(serde_yaml::from_reader(file)?);
+    }
+
+    let bytes = fs::read(path)?;
+    DmsgTable::from_bytes(&bytes)
+}
+
+fn write_dmsg_table(path: &PathBuf, table: &DmsgTable) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let yaml_path =
+        project_yaml_path_for_dat_path(path).unwrap_or_else(|| path.with_extension("yml"));
+    if let Some(parent) = yaml_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let yaml_file = File::create(yaml_path)?;
+    serde_yaml::to_writer(BufWriter::new(yaml_file), table)?;
+
+    let dat_bytes = table.to_bytes()?;
+    fs::write(path, dat_bytes)?;
+    Ok(())
+}
+
+fn project_yaml_path_for_dat_path(path: &Path) -> Option<PathBuf> {
+    let components = path.components().collect::<Vec<_>>();
+    let rom_start = components.iter().position(|component| {
+        let upper = component.as_os_str().to_string_lossy().to_ascii_uppercase();
+        upper == "ROM"
+            || (upper.starts_with("ROM")
+                && upper
+                    .chars()
+                    .skip(3)
+                    .all(|character| character.is_ascii_digit()))
+    })?;
+
+    let mut yaml_path = PathBuf::new();
+    for component in &components[..rom_start] {
+        yaml_path.push(component.as_os_str());
+    }
+    yaml_path.push("Yaml");
+    for component in &components[rom_start..] {
+        yaml_path.push(component.as_os_str());
+    }
+    yaml_path.set_extension("yml");
+    Some(yaml_path)
 }
 
 fn decode_spell_dat(bytes: &[u8]) -> Result<Value> {
@@ -1326,7 +1504,9 @@ fn set_item_stack_size(item: &mut Value, stack_size: u32) -> bool {
 
 fn get_equipment_u32_field(item: &Value, field: &str) -> Option<u32> {
     let mapping = item.as_mapping()?;
-    let equipment = mapping.get(Value::String("equipment".to_string()))?.as_mapping()?;
+    let equipment = mapping
+        .get(Value::String("equipment".to_string()))?
+        .as_mapping()?;
     let value = equipment.get(Value::String(field.to_string()))?;
     u32::try_from(value.as_u64()?).ok()
 }
@@ -1343,7 +1523,10 @@ fn set_equipment_u32_field(item: &mut Value, field: &str, value: u32) -> bool {
         return false;
     };
 
-    equipment_mapping.insert(Value::String(field.to_string()), Value::Number(value.into()));
+    equipment_mapping.insert(
+        Value::String(field.to_string()),
+        Value::Number(value.into()),
+    );
     true
 }
 
@@ -1406,10 +1589,7 @@ fn set_item_slots(item: &mut Value, slots: &[String]) -> bool {
         return false;
     };
 
-    equipment_mapping.insert(
-        Value::String("slots".to_string()),
-        string_list_value(slots),
-    );
+    equipment_mapping.insert(Value::String("slots".to_string()), string_list_value(slots));
     true
 }
 
@@ -1432,7 +1612,10 @@ fn set_weapon_u32_field(item: &mut Value, field: &str, value: u32) -> bool {
         return false;
     };
 
-    weapon_mapping.insert(Value::String(field.to_string()), Value::Number(value.into()));
+    weapon_mapping.insert(
+        Value::String(field.to_string()),
+        Value::Number(value.into()),
+    );
     true
 }
 
@@ -1480,6 +1663,23 @@ fn get_item_weapon_jug_size(item: &Value) -> Option<u32> {
 
 fn get_item_weapon_emote(item: &Value) -> Option<u32> {
     get_weapon_u32_field(item, "emote")
+}
+
+#[derive(Debug, Default)]
+struct SpellTextTables {
+    spell_names_en: HashMap<u32, String>,
+    spell_names_jp: HashMap<u32, String>,
+    spell_descriptions_en: HashMap<u32, String>,
+    spell_descriptions_jp: HashMap<u32, String>,
+    ability_names_en: HashMap<u32, String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SpellTextPaths {
+    pub spell_names_en: PathBuf,
+    pub spell_names_jp: PathBuf,
+    pub spell_descriptions_en: PathBuf,
+    pub spell_descriptions_jp: PathBuf,
 }
 
 fn get_item_icon_bytes(item: &Value) -> Option<String> {
@@ -1867,19 +2067,29 @@ fn get_spell_mp_cost(item: &Value) -> Option<u32> {
     get_spell_u32(item, "mp_cost")
 }
 
+fn get_spell_valid_targets(item: &Value) -> Option<Vec<String>> {
+    let mapping = item.as_mapping()?;
+    let targets = mapping.get(Value::String("valid_targets".to_string()))?;
+    value_string_list(targets)
+}
+
+fn set_spell_valid_targets(item: &mut Value, valid_targets: &[String]) -> bool {
+    let Some(mapping) = item.as_mapping_mut() else {
+        return false;
+    };
+
+    mapping.insert(
+        Value::String("valid_targets".to_string()),
+        string_list_value(valid_targets),
+    );
+    true
+}
+
 fn set_spell_u32(item: &mut Value, key: &str, value: u32) -> bool {
     let Some(mapping) = item.as_mapping_mut() else {
         return false;
     };
     mapping.insert(Value::String(key.to_string()), Value::Number(value.into()));
-    true
-}
-
-fn set_spell_name(item: &mut Value, name: String) -> bool {
-    let Some(mapping) = item.as_mapping_mut() else {
-        return false;
-    };
-    mapping.insert(Value::String("name".to_string()), Value::String(name));
     true
 }
 
@@ -1941,21 +2151,63 @@ fn set_spell_level_required(item: &mut Value, levels: &HashMap<String, u32>) -> 
     true
 }
 
-fn resolve_spell_name(
-    spell: &Value,
-    spell_names: &HashMap<u32, String>,
-    ability_names: &HashMap<u32, String>,
-) -> Option<String> {
-    get_spell_name(spell)
-        .or_else(|| get_spell_index(spell).and_then(|index| spell_names.get(&index).cloned()))
-        .or_else(|| get_spell_id(spell).and_then(|id| spell_names.get(&id).cloned()))
-        .or_else(|| get_spell_id(spell).and_then(|id| ability_names.get(&id).cloned()))
+fn spell_text_lookup_keys(spell: &Value) -> Vec<u32> {
+    let mut keys = Vec::with_capacity(2);
+    if let Some(index) = get_spell_index(spell) {
+        keys.push(index);
+    }
+    if let Some(id) = get_spell_id(spell) {
+        if !keys.contains(&id) {
+            keys.push(id);
+        }
+    }
+    keys
 }
 
-fn load_spell_and_ability_name_maps(
+fn lookup_spell_text(table: &HashMap<u32, String>, spell: &Value) -> Option<String> {
+    spell_text_lookup_keys(spell)
+        .into_iter()
+        .find_map(|key| table.get(&key).cloned())
+}
+
+fn resolve_spell_name(spell: &Value, spell_text: &SpellTextTables) -> Option<String> {
+    get_spell_name(spell)
+        .or_else(|| lookup_spell_text(&spell_text.spell_names_en, spell))
+        .or_else(|| {
+            get_spell_id(spell).and_then(|id| spell_text.ability_names_en.get(&id).cloned())
+        })
+}
+
+fn load_spell_text_tables(
     old_path: &Path,
     new_path: &Path,
-) -> (HashMap<u32, String>, HashMap<u32, String>) {
+    spell_text_paths: Option<&SpellTextPaths>,
+) -> SpellTextTables {
+    if let Some(paths) = spell_text_paths {
+        let spell_names_en = load_dmsg_table(&paths.spell_names_en)
+            .map(|table| dmsg_first_string_map(&table))
+            .unwrap_or_default();
+        let spell_names_jp = load_dmsg_table(&paths.spell_names_jp)
+            .map(|table| dmsg_first_string_map(&table))
+            .unwrap_or_default();
+        let spell_descriptions_en = load_dmsg_table(&paths.spell_descriptions_en)
+            .map(|table| dmsg_first_string_map(&table))
+            .unwrap_or_default();
+        let spell_descriptions_jp = load_dmsg_table(&paths.spell_descriptions_jp)
+            .map(|table| dmsg_first_string_map(&table))
+            .unwrap_or_default();
+
+        if !spell_names_en.is_empty() || !spell_names_jp.is_empty() {
+            return SpellTextTables {
+                spell_names_en,
+                spell_names_jp,
+                spell_descriptions_en,
+                spell_descriptions_jp,
+                ability_names_en: HashMap::new(),
+            };
+        }
+    }
+
     let mut candidate_roots = Vec::new();
 
     if let Some(root) = find_ffxi_root_from_path(new_path) {
@@ -1974,25 +2226,46 @@ fn load_spell_and_ability_name_maps(
 
     for root in candidate_roots {
         if let Ok(dat_context) = DatContext::from_ffxi_path(root) {
-            let spell_names = dat_context
+            let spell_names_en = dat_context
                 .get_data_from_dat(&Dat::<DmsgTable>::from(55702u32))
                 .ok()
                 .map(|data| dmsg_first_string_map(&data.dat))
                 .unwrap_or_default();
+            let spell_names_jp = dat_context
+                .get_data_from_dat(&Dat::<DmsgTable>::from(55582u32))
+                .ok()
+                .map(|data| dmsg_first_string_map(&data.dat))
+                .unwrap_or_default();
+            let spell_descriptions_en = dat_context
+                .get_data_from_dat(&Dat::<DmsgTable>::from(55734u32))
+                .ok()
+                .map(|data| dmsg_first_string_map(&data.dat))
+                .unwrap_or_default();
+            let spell_descriptions_jp = dat_context
+                .get_data_from_dat(&Dat::<DmsgTable>::from(55614u32))
+                .ok()
+                .map(|data| dmsg_first_string_map(&data.dat))
+                .unwrap_or_default();
 
-            let ability_names = dat_context
+            let ability_names_en = dat_context
                 .get_data_from_dat(&Dat::<DmsgTable>::from(55701u32))
                 .ok()
                 .map(|data| dmsg_first_string_map(&data.dat))
                 .unwrap_or_default();
 
-            if !spell_names.is_empty() || !ability_names.is_empty() {
-                return (spell_names, ability_names);
+            if !spell_names_en.is_empty() || !ability_names_en.is_empty() {
+                return SpellTextTables {
+                    spell_names_en,
+                    spell_names_jp,
+                    spell_descriptions_en,
+                    spell_descriptions_jp,
+                    ability_names_en,
+                };
             }
         }
     }
 
-    (HashMap::new(), HashMap::new())
+    SpellTextTables::default()
 }
 
 fn find_ffxi_root_from_path(path: &Path) -> Option<PathBuf> {
@@ -2012,6 +2285,18 @@ fn dmsg_first_string_map(table: &DmsgTable) -> HashMap<u32, String> {
             })
         })
         .collect()
+}
+
+fn set_dmsg_first_string(table: &mut DmsgTable, id: u32, value: String) {
+    if let Some(list) = table.lists.get_mut(&id) {
+        if let Some(entry) = list
+            .content
+            .iter_mut()
+            .find(|entry| matches!(entry, DmsgContent::String { .. }))
+        {
+            *entry = DmsgContent::String { string: value };
+        }
+    }
 }
 
 fn default_ffxi_install_roots() -> Vec<PathBuf> {

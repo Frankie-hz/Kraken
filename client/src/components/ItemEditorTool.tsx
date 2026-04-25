@@ -1,7 +1,7 @@
 import { useSearchParams } from "@solidjs/router";
 import { For, Show, batch, createDeferred, createEffect, createMemo, createResource, createSignal, onCleanup, onMount } from "solid-js";
 import { createStore } from "solid-js/store";
-import { commands, DatDescriptorInfo } from "../bindings";
+import { commands, DatDescriptor, DatDescriptorInfo } from "../bindings";
 import { ItemEditorRow, ItemEditorSaveTarget, areAllItemDatsMadeInProject, copyItemDatsToProject, loadItemEditorData, saveItemEditorData } from "../custom_bindings";
 import { showConfirm, showMessage } from "../dialogs";
 import { useData } from "../store";
@@ -198,6 +198,31 @@ const ITEM_JOB_OPTIONS = [
   "WAR",
   "WHM",
 ];
+const IN_GAME_JOB_ORDER = [
+  "WAR",
+  "MNK",
+  "WHM",
+  "BLM",
+  "RDM",
+  "THF",
+  "PLD",
+  "DRK",
+  "BST",
+  "BRD",
+  "RNG",
+  "SAM",
+  "NIN",
+  "DRG",
+  "SMN",
+  "BLU",
+  "COR",
+  "PUP",
+  "DNC",
+  "SCH",
+  "GEO",
+  "RUN",
+];
+const IN_GAME_JOB_ORDER_INDEX = new Map(IN_GAME_JOB_ORDER.map((job, index) => [job, index]));
 const ITEM_TYPE_OPTIONS = [
   "None",
   "Item",
@@ -392,6 +417,17 @@ function rowSearchText(row: ItemEditorRow) {
 
 function normalizedStringList(values: string[] | null | undefined): string[] {
   return Array.from(new Set((values ?? []).map((value) => value.trim()).filter((value) => value.length > 0))).sort();
+}
+
+function inGameSortedJobs(values: string[] | null | undefined): string[] {
+  return normalizedStringList(values).sort((left, right) => {
+    const leftIndex = IN_GAME_JOB_ORDER_INDEX.get(left) ?? Number.MAX_SAFE_INTEGER;
+    const rightIndex = IN_GAME_JOB_ORDER_INDEX.get(right) ?? Number.MAX_SAFE_INTEGER;
+    if (leftIndex !== rightIndex) {
+      return leftIndex - rightIndex;
+    }
+    return left.localeCompare(right);
+  });
 }
 
 function displayItemName(value: string | null | undefined, fallback = "-") {
@@ -691,6 +727,9 @@ function ItemEditorTool() {
       setItemSources("", "");
       setLastNotice(`Selected ${option.descriptor.type}${option.has_jp ? " (EN + JP)" : " (EN only)"}.`);
     });
+    if (getProjectFolder() && allBaseDatsMade()) {
+      await loadItemData(option.descriptor);
+    }
   };
 
   const syncTableViewport = () => {
@@ -712,8 +751,8 @@ function ItemEditorTool() {
     });
   };
 
-  const loadItemData = async () => {
-    const descriptor = selectedDatDescriptor();
+  const loadItemData = async (descriptorOverride?: DatDescriptor) => {
+    const descriptor = descriptorOverride ?? selectedDatDescriptor();
     if (!descriptor) {
       await showMessage("Select the item DAT set first.", { title: "Load Blocked", kind: "warning" });
       return;
@@ -1518,8 +1557,8 @@ function ItemEditorTool() {
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
-            <button class={compactButtonClass()} disabled={isLoading() || isResolvingDat() || isMakingBaseDats() || !canLoadSelectedFile()} onClick={loadItemData}>
-              {isLoading() ? "Loading..." : "Load"}
+            <button class={compactButtonClass()} disabled={isLoading() || isResolvingDat() || isMakingBaseDats() || !canLoadSelectedFile()} onClick={() => void loadItemData()}>
+              {isLoading() ? "Reloading..." : "Reload"}
             </button>
 
             <button
@@ -1705,13 +1744,19 @@ function ItemEditorTool() {
                   const previewFlags = () => normalizedStringList(row.new_flags ?? row.old_flags);
                   const hasRareFlag = () => previewFlags().includes("Rare");
                   const hasExclusiveFlag = () => previewFlags().includes("Ex");
-                  const previewJobsText = () => {
-                    const jobs = targetJobs();
-                    if (jobs.length === 0) {
-                      return null;
+                  const previewLevelJobsText = () => {
+                    const parts: string[] = [];
+                    const level = row.new_level ?? row.old_level;
+                    if (level !== null && level !== undefined) {
+                      parts.push(`LV ${level}`);
                     }
 
-                    return jobs.includes("All") ? "All Jobs" : jobs.join(", ");
+                    const jobs = inGameSortedJobs(row.new_jobs ?? row.old_jobs);
+                    if (jobs.length > 0) {
+                      parts.push(jobs.includes("All") ? "All Jobs" : jobs.join(" "));
+                    }
+
+                    return parts.length > 0 ? parts.join(" ") : null;
                   };
                   const flagOptions = Array.from(new Set([...ITEM_FLAG_OPTIONS, ...(row.old_flags ?? []), ...(row.new_flags ?? [])])).sort();
                   const jobOptions = Array.from(new Set([...ITEM_JOB_OPTIONS, ...(row.old_jobs ?? []), ...(row.new_jobs ?? [])])).sort();
@@ -2006,10 +2051,9 @@ function ItemEditorTool() {
                                 <div class={`rounded border border-slate-700/80 bg-slate-900/55 px-3 py-2 text-[13px] leading-5 text-slate-100 whitespace-pre-wrap ${newFieldClass((row.old_en_description ?? null) !== (row.new_en_description ?? null))}`}>
                                   {previewEnglishDescription()}
                                 </div>
-                                <Show when={previewJobsText()}>
+                                <Show when={previewLevelJobsText()}>
                                   <div class="rounded border border-slate-700/80 bg-slate-900/55 px-2 py-1 text-xs text-slate-200">
-                                    <span class="mr-2 text-slate-400">Jobs:</span>
-                                    <span>{previewJobsText()}</span>
+                                    {previewLevelJobsText()}
                                   </div>
                                 </Show>
 

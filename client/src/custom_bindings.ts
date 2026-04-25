@@ -83,6 +83,8 @@ export interface ItemEditorRow {
     new_weapon_jug_size: number | null;
     old_weapon_emote: number | null;
     new_weapon_emote: number | null;
+    old_icon_bytes: string | null;
+    new_icon_bytes: string | null;
     old_flags: string[] | null;
     new_flags: string[] | null;
     old_jobs: string[] | null;

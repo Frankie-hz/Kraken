@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     ffi::OsStr,
     path::PathBuf,
-    sync::{mpsc, Arc},
+    sync::{Arc, mpsc},
     thread,
 };
 
@@ -15,9 +15,9 @@ use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use parking_lot::RwLock;
 use processor::{dat_yaml_util::DatYamlUtil, processor::DatProcessor};
 use serde::Serialize;
-use tauri::{async_runtime, App, AppHandle, Emitter, Manager};
+use tauri::{App, AppHandle, Emitter, Manager, async_runtime};
 
-use crate::{app_persistence::PersistenceData, errors::AppError, RAW_DATA_DIR};
+use crate::{RAW_DATA_DIR, app_persistence::PersistenceData, errors::AppError};
 
 #[derive(Debug)]
 pub struct AppStateData {

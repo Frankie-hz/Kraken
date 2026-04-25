@@ -40,6 +40,7 @@ function isChangedRow(row: ItemEditorRow) {
     (row.old_weapon_skill_type ?? null) !== (row.new_weapon_skill_type ?? null) ||
     row.old_weapon_jug_size !== row.new_weapon_jug_size ||
     row.old_weapon_emote !== row.new_weapon_emote ||
+    (row.old_icon_bytes ?? null) !== (row.new_icon_bytes ?? null) ||
     !arraysEqual(row.old_flags, row.new_flags) ||
     !arraysEqual(row.old_jobs, row.new_jobs) ||
     (row.old_en_name ?? null) !== (row.new_en_name ?? null) ||
@@ -381,6 +382,8 @@ function rowSearchText(row: ItemEditorRow) {
     row.new_weapon_jug_size,
     row.old_weapon_emote,
     row.new_weapon_emote,
+    row.old_icon_bytes,
+    row.new_icon_bytes,
   ]
     .filter((value) => value !== null && value !== undefined)
     .map((value) => `${value}`.toLowerCase())
@@ -429,6 +432,98 @@ function calculateWeaponDps(damage: number | null | undefined, delay: number | n
     return null;
   }
   return Math.floor((damage * 6000) / delay);
+}
+
+function normalizeBase64(value: string | null | undefined) {
+  return (value ?? "").replace(/\s+/g, "");
+}
+
+function decodeBase64Bytes(value: string | null | undefined): Uint8Array | null {
+  const normalized = normalizeBase64(value);
+  if (!normalized) {
+    return null;
+  }
+
+  try {
+    const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+    const binary = window.atob(padded);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  } catch {
+    return null;
+  }
+}
+
+function readLe16(bytes: Uint8Array, offset: number) {
+  return bytes[offset] | (bytes[offset + 1] << 8);
+}
+
+function readLe32(bytes: Uint8Array, offset: number) {
+  return bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24);
+}
+
+function iconBytesToDataUrl(iconBytes: string | null | undefined): string | null {
+  const bytes = decodeBase64Bytes(iconBytes);
+  if (!bytes || bytes.length < 57 || bytes[0] !== 0x91) {
+    return null;
+  }
+
+  const headerOffset = 17;
+  const bitmapInfoLength = readLe32(bytes, headerOffset);
+  if (bitmapInfoLength !== 40) {
+    return null;
+  }
+
+  const width = readLe32(bytes, headerOffset + 4);
+  const height = readLe32(bytes, headerOffset + 8);
+  const planes = readLe16(bytes, headerOffset + 12);
+  const bitCount = readLe16(bytes, headerOffset + 14);
+  const compression = readLe32(bytes, headerOffset + 16);
+  if (width !== 32 || height !== 32 || planes !== 1 || bitCount !== 8 || compression !== 0) {
+    return null;
+  }
+
+  const paletteOffset = headerOffset + bitmapInfoLength;
+  const pixelCount = width * height;
+  const pixelOffset = bytes.length - pixelCount;
+  if (pixelOffset <= paletteOffset || pixelOffset + pixelCount > bytes.length) {
+    return null;
+  }
+
+  const paletteEntryCount = Math.floor((pixelOffset - paletteOffset) / 4);
+  if (paletteEntryCount <= 0) {
+    return null;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return null;
+  }
+
+  const imageData = context.createImageData(width, height);
+  for (let y = 0; y < height; y += 1) {
+    const sourceY = height - 1 - y;
+    for (let x = 0; x < width; x += 1) {
+      const pixelIndex = bytes[pixelOffset + sourceY * width + x];
+      const paletteIndex = Math.min(pixelIndex, paletteEntryCount - 1);
+      const paletteOffsetForIndex = paletteOffset + paletteIndex * 4;
+      const outputOffset = (y * width + x) * 4;
+      imageData.data[outputOffset] = bytes[paletteOffsetForIndex + 2];
+      imageData.data[outputOffset + 1] = bytes[paletteOffsetForIndex + 1];
+      imageData.data[outputOffset + 2] = bytes[paletteOffsetForIndex];
+      const alpha = bytes[paletteOffsetForIndex + 3];
+      imageData.data[outputOffset + 3] = alpha === 0 ? 0 : Math.min(255, alpha * 2);
+    }
+  }
+
+  context.putImageData(imageData, 0, 0);
+  return canvas.toDataURL("image/png");
 }
 
 function buildRowIndexById(rows: ItemEditorRow[]) {
@@ -1082,6 +1177,12 @@ function ItemEditorTool() {
     });
   };
 
+  const setRowNewIconBytes = (rowId: number, value: string) => {
+    updateRowById(rowId, (row) => {
+      row.new_icon_bytes = normalizeBase64(value);
+    });
+  };
+
   const setRowNewFlags = (rowId: number, flags: string[]) => {
     const nextFlags = normalizedStringList(flags);
     updateRowById(rowId, (row) => {
@@ -1151,6 +1252,7 @@ function ItemEditorTool() {
       row.new_weapon_skill_type = row.old_weapon_skill_type;
       row.new_weapon_jug_size = row.old_weapon_jug_size;
       row.new_weapon_emote = row.old_weapon_emote;
+      row.new_icon_bytes = row.old_icon_bytes;
       row.new_flags = normalizedStringList(row.old_flags);
       row.new_jobs = normalizedStringList(row.old_jobs);
       row.new_en_name = row.old_en_name;
@@ -1197,6 +1299,7 @@ function ItemEditorTool() {
       new_weapon_skill_type: row.old_weapon_skill_type,
       new_weapon_jug_size: row.old_weapon_jug_size,
       new_weapon_emote: row.old_weapon_emote,
+      new_icon_bytes: row.old_icon_bytes,
       new_flags: normalizedStringList(row.old_flags),
       new_jobs: normalizedStringList(row.old_jobs),
       new_en_name: row.old_en_name,
@@ -1596,11 +1699,7 @@ function ItemEditorTool() {
                       ? SLOT_PRESETS
                       : [...SLOT_PRESETS, { label: currentSlots.join(", ") || "Custom", values: currentSlots }];
                   })();
-                  const previewIconUrl = () => row.new_id !== null
-                    ? `https://static.ffxiah.com/images/icon/${row.new_id}.png`
-                    : row.old_id !== null
-                      ? `https://static.ffxiah.com/images/icon/${row.old_id}.png`
-                      : null;
+                  const previewIconUrl = () => iconBytesToDataUrl(row.new_icon_bytes ?? row.old_icon_bytes);
                   const previewEnglishName = () => displayItemName(row.new_en_name ?? row.old_en_name ?? row.new_jp_name ?? row.old_jp_name, "Unknown item");
                   const previewEnglishDescription = () => (row.new_en_description ?? "").trim() || "No English description.";
                   const previewFlags = () => normalizedStringList(row.new_flags ?? row.old_flags);
@@ -1895,7 +1994,7 @@ function ItemEditorTool() {
                                 <img
                                   src={previewIconUrl()!}
                                   alt=""
-                                  class="h-18 w-18 shrink-0 rounded-sm border border-slate-700 bg-slate-900 object-contain"
+                                  class="h-[5.5rem] w-[5.5rem] shrink-0 rounded-sm border border-slate-700 bg-slate-900 object-contain [image-rendering:pixelated]"
                                   loading="lazy"
                                   onError={(e) => {
                                     e.currentTarget.style.display = "none";
@@ -1916,6 +2015,15 @@ function ItemEditorTool() {
 
                               </div>
                             </div>
+                          </div>
+                          <div class="mt-3">
+                            <div class="mb-1 text-sm font-semibold text-slate-200">Icon Bytes</div>
+                            <textarea
+                              class={`m-0 min-h-28 w-full resize-y rounded-md border bg-slate-800 px-2 py-1 font-mono text-[11px] leading-4 text-slate-100 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_icon_bytes ?? null) !== (row.new_icon_bytes ?? null))}`}
+                              spellcheck={false}
+                              value={row.new_icon_bytes ?? ""}
+                              onInput={(e) => setRowNewIconBytes(rowId, e.currentTarget.value)}
+                            />
                           </div>
                         </div>
                       </div>

@@ -105,6 +105,8 @@ pub struct ItemEditorRow {
     pub new_weapon_jug_size: Option<u32>,
     pub old_weapon_emote: Option<u32>,
     pub new_weapon_emote: Option<u32>,
+    pub old_icon_bytes: Option<String>,
+    pub new_icon_bytes: Option<String>,
     pub old_flags: Option<Vec<String>>,
     pub new_flags: Option<Vec<String>>,
     pub old_jobs: Option<Vec<String>>,
@@ -742,6 +744,9 @@ pub fn load_item_editor_rows(
         let old_weapon_emote = english_item
             .and_then(get_item_weapon_emote)
             .or_else(|| japanese_item.and_then(get_item_weapon_emote));
+        let old_icon_bytes = english_item
+            .and_then(get_item_icon_bytes)
+            .or_else(|| japanese_item.and_then(get_item_icon_bytes));
         let old_flags = english_item
             .and_then(get_item_flags)
             .or_else(|| japanese_item.and_then(get_item_flags));
@@ -795,6 +800,8 @@ pub fn load_item_editor_rows(
             new_weapon_jug_size: old_weapon_jug_size,
             old_weapon_emote,
             new_weapon_emote: old_weapon_emote,
+            old_icon_bytes: old_icon_bytes.clone(),
+            new_icon_bytes: old_icon_bytes,
             old_flags: old_flags.clone(),
             new_flags: old_flags,
             old_jobs: old_jobs.clone(),
@@ -1475,6 +1482,24 @@ fn get_item_weapon_emote(item: &Value) -> Option<u32> {
     get_weapon_u32_field(item, "emote")
 }
 
+fn get_item_icon_bytes(item: &Value) -> Option<String> {
+    let mapping = item.as_mapping()?;
+    let value = mapping.get(Value::String("icon_bytes".to_string()))?;
+    value.as_str().map(|value| value.to_string())
+}
+
+fn set_item_icon_bytes(item: &mut Value, icon_bytes: String) -> bool {
+    let Some(mapping) = item.as_mapping_mut() else {
+        return false;
+    };
+
+    mapping.insert(
+        Value::String("icon_bytes".to_string()),
+        Value::String(icon_bytes),
+    );
+    true
+}
+
 fn get_item_shield_size(item: &Value) -> Option<u32> {
     get_equipment_u32_field(item, "shield_size")
 }
@@ -1671,6 +1696,10 @@ fn apply_common_item_editor_updates(item: &mut Value, row: &ItemEditorRow) {
 
     if let Some(emote) = row.new_weapon_emote {
         set_weapon_u32_field(item, "emote", emote);
+    }
+
+    if let Some(icon_bytes) = row.new_icon_bytes.clone() {
+        set_item_icon_bytes(item, icon_bytes);
     }
 
     if let Some(flags) = row.new_flags.as_ref() {

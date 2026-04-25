@@ -57,6 +57,18 @@ function newFieldClass(changed: boolean) {
   return changed ? "bg-rose-950/35 text-rose-200" : "bg-emerald-950/35 text-emerald-200";
 }
 
+function listChangeTextClass(originalValues: string[], targetValues: string[], value: string) {
+  const wasPresent = originalValues.includes(value);
+  const isPresent = targetValues.includes(value);
+  if (!wasPresent && isPresent) {
+    return "text-emerald-200";
+  }
+  if (wasPresent && !isPresent) {
+    return "text-rose-200 line-through decoration-rose-300/80";
+  }
+  return wasPresent ? "text-slate-100" : "text-slate-400";
+}
+
 function splitPath(path: string): { dir: string; file: string } {
   const normalized = path.replaceAll("\\", "/");
   const idx = normalized.lastIndexOf("/");
@@ -2097,7 +2109,7 @@ function ItemEditorTool() {
                                           checked={targetFlags().includes(flag)}
                                           onChange={(e) => toggleRowNewFlag(rowId, flag, e.currentTarget.checked)}
                                         />
-                                        <span class="min-w-0 break-words" title={flag}>{flag}</span>
+                                        <span class={`min-w-0 break-words ${listChangeTextClass(originalFlags(), targetFlags(), flag)}`} title={flag}>{flag}</span>
                                       </label>
                                     )}
                                   </For>
@@ -2106,29 +2118,8 @@ function ItemEditorTool() {
                             </Show>
                           </div>
 
-                          <div class="border border-slate-700 rounded-md p-2">
-                            <div class="mb-2 text-sm font-semibold text-slate-200">Flags Preview</div>
-                            <Show when={!flagsSectionCollapsed()}>
-                              <Show
-                                when={targetFlags().length > 0}
-                                fallback={<div class="text-sm text-slate-400">No flags set.</div>}
-                              >
-                                <div class="grid grid-cols-2 xl:grid-cols-3 gap-2">
-                                  <For each={targetFlags()}>
-                                    {(flag) => (
-                                      <div class={`rounded px-2 py-1 text-xs ${originalFlags().includes(flag) ? "bg-slate-800 text-slate-100" : "bg-emerald-950/35 text-emerald-200"}`}>
-                                        {flag}
-                                      </div>
-                                    )}
-                                  </For>
-                                </div>
-                              </Show>
-                            </Show>
-                          </div>
-
                           <Show
                             when={hasEquipmentJobs}
-                            fallback={<div class="hidden lg:block" aria-hidden="true"></div>}
                           >
                             <div class="border border-slate-700 rounded-md p-2">
                               <div class="mb-2 flex items-center justify-between gap-2">
@@ -2153,37 +2144,12 @@ function ItemEditorTool() {
                                             checked={targetJobs().includes(job)}
                                             onChange={(e) => toggleRowNewJob(rowId, job, e.currentTarget.checked)}
                                           />
-                                          <span class="min-w-0 break-words" title={job}>{job}</span>
+                                          <span class={`min-w-0 break-words ${listChangeTextClass(originalJobs(), targetJobs(), job)}`} title={job}>{job}</span>
                                         </label>
                                       )}
                                     </For>
                                   </div>
                                 </>
-                              </Show>
-                            </div>
-                          </Show>
-
-                          <Show
-                            when={hasEquipmentJobs}
-                            fallback={<div class="hidden lg:block" aria-hidden="true"></div>}
-                          >
-                            <div class="border border-slate-700 rounded-md p-2">
-                              <div class="mb-2 text-sm font-semibold text-slate-200">Jobs Preview</div>
-                              <Show when={!jobsSectionCollapsed()}>
-                                <Show
-                                  when={targetJobs().length > 0}
-                                  fallback={<div class="text-sm text-slate-400">No jobs set.</div>}
-                                >
-                                  <div class="grid grid-cols-2 xl:grid-cols-3 gap-2">
-                                    <For each={targetJobs()}>
-                                      {(job) => (
-                                        <div class={`rounded px-2 py-1 text-xs ${originalJobs().includes(job) ? "bg-slate-800 text-slate-100" : "bg-emerald-950/35 text-emerald-200"}`}>
-                                          {job}
-                                        </div>
-                                      )}
-                                    </For>
-                                  </div>
-                                </Show>
                               </Show>
                             </div>
                           </Show>
@@ -2218,62 +2184,32 @@ function ItemEditorTool() {
                             </Show>
                           </div>
 
-                          <div class="border border-slate-700 rounded-md p-2">
-                            <div class="mb-2 text-sm font-semibold text-slate-200">English Preview</div>
-                            <Show when={!englishTextSectionCollapsed()}>
-                              <>
-                                <textarea
-                                  class={`m-0 min-h-40 w-full resize-y px-2 py-1 text-sm rounded-md border border-slate-700 bg-slate-900 text-slate-100 focus:outline-none ${newFieldClass((row.old_en_description ?? null) !== (row.new_en_description ?? null))}`}
-                                  rows={5}
-                                  readonly
-                                  value={row.new_en_description ?? ""}
-                                />
-                              </>
-                            </Show>
-                          </div>
-
                           <Show when={row.has_japanese}>
-                            <>
-                              <div class="border border-slate-700 rounded-md p-2">
-                                <div class="mb-2 flex items-center justify-between gap-2">
-                                  <div class="text-sm font-semibold text-slate-200">Japanese Text</div>
-                                  <button
-                                    class={compactButtonClass(japaneseTextSectionCollapsed())}
-                                    onClick={() => setJapaneseTextSectionCollapsed(!japaneseTextSectionCollapsed())}
-                                  >
-                                    {japaneseTextSectionCollapsed() ? "Show" : "Hide"}
-                                  </button>
-                                </div>
-                                <Show when={!japaneseTextSectionCollapsed()}>
-                                  <>
-                                    <div class="mb-2 text-[11px] text-slate-400">Edit the Japanese item name and description here.</div>
-                                    <textarea
-                                      class={`m-0 min-h-40 w-full resize-y px-2 py-1 text-sm rounded-md border bg-slate-800 text-slate-100 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_jp_description ?? null) !== (row.new_jp_description ?? null))}`}
-                                      rows={5}
-                                      value={row.new_jp_description ?? ""}
-                                      onInput={(e) => setRowNewJapaneseDescription(rowId, e.currentTarget.value)}
-                                    />
-                                    <div class="mt-2 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-400 whitespace-pre-wrap">
-                                      {row.old_jp_description ?? "No original Japanese description."}
-                                    </div>
-                                  </>
-                                </Show>
+                            <div class="border border-slate-700 rounded-md p-2">
+                              <div class="mb-2 flex items-center justify-between gap-2">
+                                <div class="text-sm font-semibold text-slate-200">Japanese Text</div>
+                                <button
+                                  class={compactButtonClass(japaneseTextSectionCollapsed())}
+                                  onClick={() => setJapaneseTextSectionCollapsed(!japaneseTextSectionCollapsed())}
+                                >
+                                  {japaneseTextSectionCollapsed() ? "Show" : "Hide"}
+                                </button>
                               </div>
-
-                              <div class="border border-slate-700 rounded-md p-2">
-                                <div class="mb-2 text-sm font-semibold text-slate-200">Japanese Preview</div>
-                                <Show when={!japaneseTextSectionCollapsed()}>
-                                  <>
-                                    <textarea
-                                      class={`m-0 min-h-40 w-full resize-y px-2 py-1 text-sm rounded-md border border-slate-700 bg-slate-900 text-slate-100 focus:outline-none ${newFieldClass((row.old_jp_description ?? null) !== (row.new_jp_description ?? null))}`}
-                                      rows={5}
-                                      readonly
-                                      value={row.new_jp_description ?? ""}
-                                    />
-                                  </>
-                                </Show>
-                              </div>
-                            </>
+                              <Show when={!japaneseTextSectionCollapsed()}>
+                                <>
+                                  <div class="mb-2 text-[11px] text-slate-400">Edit the Japanese item name and description here.</div>
+                                  <textarea
+                                    class={`m-0 min-h-40 w-full resize-y px-2 py-1 text-sm rounded-md border bg-slate-800 text-slate-100 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_jp_description ?? null) !== (row.new_jp_description ?? null))}`}
+                                    rows={5}
+                                    value={row.new_jp_description ?? ""}
+                                    onInput={(e) => setRowNewJapaneseDescription(rowId, e.currentTarget.value)}
+                                  />
+                                  <div class="mt-2 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-400 whitespace-pre-wrap">
+                                    {row.old_jp_description ?? "No original Japanese description."}
+                                  </div>
+                                </>
+                              </Show>
+                            </div>
                           </Show>
                         </div>
                       </div>

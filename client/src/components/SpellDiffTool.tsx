@@ -2,7 +2,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useSearchParams } from "@solidjs/router";
 import { For, Show, batch, createEffect, createMemo, createResource, createSignal, onCleanup, onMount, untrack } from "solid-js";
 import { createStore } from "solid-js/store";
-import { SpellDiffRow, compareSpellFiles, copySpellDatToProject, isSpellDatMadeInProject, saveSpellDiff } from "../custom_bindings";
+import { SpellDiffRow, compareSpellFiles, copySpellDatToProject, isSpellDatMadeInProject, resetSpellDatToRetailBase, saveSpellDiff } from "../custom_bindings";
 import { showConfirm, showMessage } from "../dialogs";
 import { useData } from "../store";
 import { projectDisplayPath, unwrap } from "../util";
@@ -369,6 +369,7 @@ function SpellDiffTool() {
   const [isLoading, setLoading] = createSignal(false);
   const [isSaving, setSaving] = createSignal(false);
   const [isMakingBaseDat, setMakingBaseDat] = createSignal(false);
+  const [isResettingToRetailBase, setResettingToRetailBase] = createSignal(false);
   const [prefillApplied, setPrefillApplied] = createSignal(false);
   const [rowsVersion, setRowsVersion] = createSignal(0);
   const [scrollTop, setScrollTop] = createSignal(0);
@@ -744,6 +745,45 @@ function SpellDiffTool() {
       await showMessage(`${err}`, { title: "Copy Error", kind: "error" });
     } finally {
       setMakingBaseDat(false);
+    }
+  };
+
+  const resetSpellDatToRetailBaseCopy = async () => {
+    if (!getProjectFolder()) {
+      await showMessage("Set a Project Folder first.", { title: "Project Folder Required", kind: "warning" });
+      return;
+    }
+    if (!spellBaseDatMade()) {
+      await showMessage("Make the Base Spell DAT first so Kraken has Retail Base files to restore from.", {
+        title: "Base DAT Required",
+        kind: "warning",
+      });
+      return;
+    }
+
+    const confirmed = await showConfirm(
+      "Reset the Spell Editor DATs in Custom back to Retail Base? This overwrites the current Custom spell DAT and spell text DATs.",
+      {
+        title: "Reset To Retail Base",
+        kind: "warning",
+        okLabel: "Reset DATs",
+        cancelLabel: "Cancel",
+      },
+    );
+    if (confirmed !== true) {
+      return;
+    }
+
+    setResettingToRetailBase(true);
+    try {
+      const resetPath = unwrap(await resetSpellDatToRetailBase());
+      setSpellPath(resetPath);
+      await loadSpellData();
+      setLastNotice("Reset spell DATs to Retail Base.");
+    } catch (err) {
+      await showMessage(`${err}`, { title: "Reset Error", kind: "error" });
+    } finally {
+      setResettingToRetailBase(false);
     }
   };
 
@@ -1179,19 +1219,30 @@ function SpellDiffTool() {
               <div class="italic text-slate-300">{lastNotice()}</div>
             </Show>
             <Show when={rows.length > 0}>
-              <div class="flex items-center gap-2">
+              <div class="flex flex-col items-end gap-1">
                 <div class="text-slate-300">
                   Loaded: {rows.length} | Edited: {editedRowIds().size}
                 </div>
-                <button
-                  class={compactButtonClass()}
-                  disabled={editedRowIds().size === 0}
-                  onClick={() => {
-                    void resetAllRowsToOriginal();
-                  }}
-                >
-                  Reset All
-                </button>
+                <div class="flex flex-wrap justify-end gap-2">
+                  <button
+                    class={compactButtonClass()}
+                    disabled={isLoading() || isSaving() || isMakingBaseDat() || isResettingToRetailBase() || !spellBaseDatMade()}
+                    onClick={() => {
+                      void resetSpellDatToRetailBaseCopy();
+                    }}
+                  >
+                    {isResettingToRetailBase() ? "Resetting..." : "Reset DATs to Retail Base"}
+                  </button>
+                  <button
+                    class={compactButtonClass()}
+                    disabled={editedRowIds().size === 0}
+                    onClick={() => {
+                      void resetAllRowsToOriginal();
+                    }}
+                  >
+                    Reset All
+                  </button>
+                </div>
               </div>
             </Show>
           </div>

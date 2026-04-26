@@ -193,21 +193,6 @@ pub enum MagicType {
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, FromPrimitive, IntoPrimitive,
 )]
-#[repr(u8)]
-pub enum AoeType {
-    None = 0,
-    TargetAoe = 1,
-    SelfConal = 2,
-    SelfAoe = 3,
-
-    #[num_enum(catch_all)]
-    #[serde(untagged)]
-    Unknown(u8),
-}
-
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, FromPrimitive, IntoPrimitive,
-)]
 #[repr(u32)]
 pub enum MagicValidTargetType {
     All = 0,
@@ -228,6 +213,31 @@ pub enum MagicValidTargetType {
     #[num_enum(catch_all)]
     #[serde(untagged)]
     Unknown(u32),
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, FromPrimitive, IntoPrimitive,
+)]
+#[repr(u16)]
+pub enum CommValidTargetType {
+    All = 0,
+    SelfTarget = 1,
+    SelfAoe = 2,
+    SelfAoe2 = 3,
+    MobSelfAoe = 5,
+    Party = 6,
+    PartyAoe = 7,
+    Luopan = 8,
+    Pet = 9,
+    Pc = 10,
+    SelfPet = 12,
+    Mob = 13,
+    MobAoe = 14,
+    Dead = 15,
+
+    #[num_enum(catch_all)]
+    #[serde(untagged)]
+    Unknown(u16),
 }
 
 #[derive(

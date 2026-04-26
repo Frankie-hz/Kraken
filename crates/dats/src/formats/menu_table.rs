@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 
 use crate::{
     enums::{
-        AreaShapeType, Element, JobEnum, MagicType, MagicValidTargetType, SkillType, SpellDistance,
+        AreaShapeType, CommValidTargetType, Element, JobEnum, MagicType, MagicValidTargetType,
+        SkillType, SpellDistance,
     },
-    formats::{dmsg_list::DmsgContent, dmsg_table::DmsgTable},
     serde_base64, serde_hex, serde_hex_num,
     utils::{
         decode_data_block_masked, decode_text_block, encode_data_block_masked, encode_text_block,
@@ -195,15 +195,23 @@ impl Section {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AbilityInfo {
     id: u16,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    name: Option<String>,
     ability_type: AbilityType,
     icon_id: u8,
-    mp_cost: u16,
-    unknown1: u16,
-    shared_timer_id: u16,
+    #[serde(alias = "unknown1")]
+    icon2_id: u16,
+    #[serde(alias = "mp_cost")]
+    charges_required: u16,
+    #[serde(alias = "shared_timer_id")]
+    recast_id: u16,
     valid_targets: ValidTargets,
     tp_cost: i16,
+    level: i8,
+    range: SpellDistance,
+    aoe_range: SpellDistance,
+    area_shape: AreaShapeType,
+    valid_target_type: CommValidTargetType,
+    tp_modifier: i8,
+    tp_modifier_values: Vec<i16>,
 
     #[serde(with = "serde_hex")]
     unknowns: Vec<u8>,
@@ -222,18 +230,27 @@ impl SectionInfo for AbilityInfo {
 
         let info = AbilityInfo {
             id: data_walker.step::<u16>()?,
-            name: None,
             ability_type: AbilityType::from(data_walker.step::<u8>()?),
             icon_id: data_walker.step::<u8>()?,
-            unknown1: data_walker.step::<u16>()?,
-            mp_cost: data_walker.step::<u16>()?,
-            shared_timer_id: data_walker.step::<u16>()?,
+            icon2_id: data_walker.step::<u16>()?,
+            charges_required: data_walker.step::<u16>()?,
+            recast_id: data_walker.step::<u16>()?,
             valid_targets: ValidTargets::from_bits(data_walker.step::<u16>()?).unwrap_or_default(),
             tp_cost: data_walker.step::<i16>()?,
-            unknowns: data_walker
-                .take_bytes(data_walker.remaining() - 1)?
-                .to_vec(),
+            unknowns: data_walker.take_bytes(1)?.to_vec(),
+            level: data_walker.step::<u8>()? as i8,
+            range: SpellDistance::from(data_walker.step::<u8>()?),
+            aoe_range: SpellDistance::from(data_walker.step::<u8>()?),
+            area_shape: AreaShapeType::from(data_walker.step::<u8>()?),
+            valid_target_type: CommValidTargetType::from(data_walker.step::<u16>()?),
+            tp_modifier: data_walker.step::<u8>()? as i8,
+            tp_modifier_values: (0..3)
+                .map(|_| data_walker.step::<i16>())
+                .collect::<Result<Vec<_>>>()?,
         };
+        let mut info = info;
+        info.unknowns
+            .extend_from_slice(data_walker.take_bytes(data_walker.remaining() - 1)?);
 
         data_walker.expect_msg::<u8>(0xFF, "End of ability marker")?;
 
@@ -246,12 +263,35 @@ impl SectionInfo for AbilityInfo {
         data_walker.write(self.id);
         data_walker.write::<u8>(self.ability_type.into());
         data_walker.write(self.icon_id);
-        data_walker.write(self.unknown1);
-        data_walker.write(self.mp_cost);
-        data_walker.write(self.shared_timer_id);
+        data_walker.write(self.icon2_id);
+        data_walker.write(self.charges_required);
+        data_walker.write(self.recast_id);
         data_walker.write(self.valid_targets.bits());
         data_walker.write(self.tp_cost);
-        data_walker.write_bytes(&self.unknowns);
+        if self.unknowns.len() != 20 {
+            return Err(anyhow!(
+                "AbilityInfo unknowns must be 20 bytes, found {}",
+                self.unknowns.len()
+            ));
+        }
+
+        data_walker.write(self.unknowns[0]);
+        data_walker.write(self.level as u8);
+        data_walker.write::<u8>(self.range.into());
+        data_walker.write::<u8>(self.aoe_range.into());
+        data_walker.write::<u8>(self.area_shape.into());
+        data_walker.write::<u16>(self.valid_target_type.into());
+        data_walker.write(self.tp_modifier as u8);
+        if self.tp_modifier_values.len() != 3 {
+            return Err(anyhow!(
+                "AbilityInfo tp_modifier_values must contain 3 values, found {}",
+                self.tp_modifier_values.len()
+            ));
+        }
+        for tp_modifier_value in &self.tp_modifier_values {
+            data_walker.write(*tp_modifier_value);
+        }
+        data_walker.write_bytes(&self.unknowns[1..]);
 
         data_walker.write::<u8>(0xFF);
 
@@ -266,8 +306,6 @@ impl SectionInfo for AbilityInfo {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MagicInfo {
     index: u16,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    name: Option<String>,
     magic_type: MagicType,
     element: Element,
     valid_targets: ValidTargets,
@@ -304,7 +342,6 @@ impl SectionInfo for MagicInfo {
 
         let mut info = MagicInfo {
             index: data_walker.step::<u16>()?,
-            name: None,
             magic_type: MagicType::from(data_walker.step::<u16>()?),
             element: Element::try_from(data_walker.step::<u16>()?)?,
             valid_targets: ValidTargets::from_bits(data_walker.step::<u16>()?).unwrap_or_default(),
@@ -701,41 +738,6 @@ impl MenuTable {
         Ok(MenuTable { sections })
     }
 
-    fn lookup_name(names_table: &DmsgTable, key: u32) -> Option<String> {
-        names_table.lists.get(&key).and_then(|list| {
-            list.content.iter().find_map(|entry| match entry {
-                DmsgContent::String { string } if !string.is_empty() => Some(string.clone()),
-                _ => None,
-            })
-        })
-    }
-
-    pub fn resolve_names(
-        &mut self,
-        spell_names: Option<&DmsgTable>,
-        ability_names: Option<&DmsgTable>,
-    ) {
-        for section in &mut self.sections {
-            match section {
-                Section::Mgc_(entries) => {
-                    for entry in entries {
-                        entry.name = spell_names.and_then(|table| {
-                            Self::lookup_name(table, entry.index as u32)
-                                .or_else(|| Self::lookup_name(table, entry.id as u32))
-                        });
-                    }
-                }
-                Section::Comm(entries) => {
-                    for entry in entries {
-                        entry.name = ability_names
-                            .and_then(|table| Self::lookup_name(table, entry.id as u32));
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
     pub fn write<T: WritingByteWalker>(&self, walker: &mut T) -> Result<()> {
         walker.write_str("menu");
         walker.write::<u32>(0x101);
@@ -771,13 +773,13 @@ impl DatFormat for MenuTable {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::{fs, path::PathBuf};
 
     use crate::{
         dat_format::DatFormat,
         enums::{
-            AreaShapeType, Element, JobEnum, MagicType, MagicValidTargetType, SkillType,
-            SpellDistance,
+            AbilityType, AreaShapeType, CommValidTargetType, Element, JobEnum, MagicType,
+            MagicValidTargetType, SkillType, SpellDistance,
         },
         flags::{JobFlag, MagicModifier, ValidTargets},
         formats::menu_table::Section,
@@ -842,6 +844,7 @@ mod tests {
         );
 
         let spell_yaml = serde_yaml::to_string(spell).unwrap();
+        assert!(!spell_yaml.contains("name:"));
         assert!(spell_yaml.contains("unknown_0x42: 114"));
         assert!(spell_yaml.contains("modifiers:"));
         assert!(spell_yaml.contains("range: D20"));
@@ -855,6 +858,51 @@ mod tests {
         assert!(!spell_yaml.contains("unknown54:"));
         assert!(!spell_yaml.contains("unknown58:"));
         assert!(!spell_yaml.contains("unknown60:"));
+
+        let comm = res.sections.get(4).unwrap();
+        let ability_infos = match comm {
+            Section::Comm(ability_info) => ability_info,
+            _ => {
+                unreachable!("expected ability section");
+            }
+        };
+
+        let ability = ability_infos.get(6).unwrap();
+
+        assert_eq!(ability.id, 6);
+        assert_eq!(ability.ability_type, AbilityType::Weapon);
+        assert_eq!(ability.icon_id, 46);
+        assert_eq!(ability.icon2_id, 590);
+        assert_eq!(ability.charges_required, 0);
+        assert_eq!(ability.recast_id, 900);
+        assert_eq!(ability.valid_targets, ValidTargets::Enemy);
+        assert_eq!(ability.tp_cost, -1);
+        assert_eq!(ability.level, 0);
+        assert_eq!(ability.range, SpellDistance::D3);
+        assert_eq!(ability.aoe_range, SpellDistance::D4);
+        assert_eq!(ability.area_shape, AreaShapeType::Sphere);
+        assert_eq!(ability.valid_target_type, CommValidTargetType::MobAoe);
+        assert_eq!(ability.tp_modifier, 0);
+        assert_eq!(ability.tp_modifier_values, vec![0, 48, 96]);
+        assert_eq!(ability.unknowns.len(), 20);
+
+        let ability_yaml = serde_yaml::to_string(ability).unwrap();
+        assert!(!ability_yaml.contains("name:"));
+        assert!(ability_yaml.contains("icon2_id: 590"));
+        assert!(ability_yaml.contains("charges_required: 0"));
+        assert!(ability_yaml.contains("recast_id: 900"));
+        assert!(ability_yaml.contains("level: 0"));
+        assert!(ability_yaml.contains("range: D3"));
+        assert!(ability_yaml.contains("aoe_range: D4"));
+        assert!(ability_yaml.contains("area_shape: Sphere"));
+        assert!(ability_yaml.contains("valid_target_type: MobAoe"));
+        assert!(ability_yaml.contains("tp_modifier: 0"));
+        assert!(ability_yaml.contains("tp_modifier_values:"));
+        assert!(!ability_yaml.contains("mp_cost:"));
+        assert!(!ability_yaml.contains("unknown1:"));
+        assert!(!ability_yaml.contains("shared_timer_id:"));
+
+        assert_eq!(res.to_bytes().unwrap(), fs::read(&dat_path).unwrap());
     }
 
     #[test]

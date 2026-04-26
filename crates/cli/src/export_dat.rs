@@ -3,7 +3,7 @@ use std::path::Path;
 use std::{path::PathBuf, sync::Arc};
 
 use anyhow::Result;
-use dats::base::{Dat, DatId, DatPath};
+use dats::base::{DatId, DatPath};
 use dats::context::DatContext;
 
 use dats::dat_format::DatFormat;
@@ -104,27 +104,7 @@ fn try_decode(
         return Ok(());
     }
 
-    if let Ok(mut data) = MenuTable::from_path(dat_path) {
-        let is_data_menu = DatPath::from_path(dat_path)
-            .ok()
-            .and_then(|path| dat_context.get_dat_id(path))
-            .map(|id| id.get_inner() == 81)
-            .unwrap_or(false);
-
-        if is_data_menu {
-            let spell_names = dat_context
-                .get_data_from_dat(&Dat::<DmsgTable>::from(55702u32))
-                .ok();
-            let ability_names = dat_context
-                .get_data_from_dat(&Dat::<DmsgTable>::from(55701u32))
-                .ok();
-
-            data.resolve_names(
-                spell_names.as_ref().map(|lookup| &lookup.dat),
-                ability_names.as_ref().map(|lookup| &lookup.dat),
-            );
-        }
-
+    if let Ok(data) = MenuTable::from_path(dat_path) {
         let _ = std::fs::create_dir_all(&out_path.parent().unwrap());
         let file = std::fs::File::create(&out_path).unwrap();
         serde_yaml::to_writer(BufWriter::new(file), &data)?;

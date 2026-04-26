@@ -2019,65 +2019,69 @@ function ItemEditorTool() {
                             </div>
 
                             <Show when={hasWeaponData}>
-                              <div class="grid grid-cols-[minmax(5.75rem,auto)_minmax(0,1fr)] gap-y-2 gap-x-2 content-start border-t border-slate-700 pt-2 xl:col-span-2">
-                                <div class="text-slate-300">Damage:</div>
-                                <input
-                                  class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_weapon_damage !== row.new_weapon_damage)}`}
-                                  type="number"
-                                  min={0}
-                                  step={1}
-                                  value={row.new_weapon_damage ?? ""}
-                                  onInput={(e) => setRowNewWeaponDamage(rowId, e.currentTarget.value)}
-                                />
+                              <div class="grid grid-cols-1 xl:grid-cols-2 gap-x-4 gap-y-2 border-t border-slate-700 pt-2 xl:col-span-2">
+                                <div class="grid grid-cols-[minmax(5.75rem,auto)_minmax(0,1fr)] gap-y-2 gap-x-2 content-start">
+                                  <div class="text-slate-300">Damage:</div>
+                                  <input
+                                    class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_weapon_damage !== row.new_weapon_damage)}`}
+                                    type="number"
+                                    min={0}
+                                    step={1}
+                                    value={row.new_weapon_damage ?? ""}
+                                    onInput={(e) => setRowNewWeaponDamage(rowId, e.currentTarget.value)}
+                                  />
 
-                                <div class="text-slate-300">Delay:</div>
-                                <input
-                                  class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_weapon_delay !== row.new_weapon_delay)}`}
-                                  type="number"
-                                  min={0}
-                                  step={1}
-                                  value={row.new_weapon_delay ?? ""}
-                                  onInput={(e) => setRowNewWeaponDelay(rowId, e.currentTarget.value)}
-                                />
+                                  <div class="text-slate-300">Delay:</div>
+                                  <input
+                                    class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_weapon_delay !== row.new_weapon_delay)}`}
+                                    type="number"
+                                    min={0}
+                                    step={1}
+                                    value={row.new_weapon_delay ?? ""}
+                                    onInput={(e) => setRowNewWeaponDelay(rowId, e.currentTarget.value)}
+                                  />
 
-                                <div class="text-slate-300">DPS:</div>
-                                <input
-                                  class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-600 bg-slate-900 text-slate-200 focus:outline-none ${newFieldClass(row.old_weapon_dps !== row.new_weapon_dps)}`}
-                                  type="number"
-                                  value={row.new_weapon_dps ?? ""}
-                                  readOnly
-                                />
+                                  <div class="text-slate-300">DPS:</div>
+                                  <input
+                                    class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-600 bg-slate-900 text-slate-200 focus:outline-none ${newFieldClass(row.old_weapon_dps !== row.new_weapon_dps)}`}
+                                    type="number"
+                                    value={row.new_weapon_dps ?? ""}
+                                    readOnly
+                                  />
+                                </div>
 
-                                <div class="text-slate-300">Skill Type:</div>
-                                <select
-                                  class={`m-0 w-full py-0 px-2 text-sm rounded-md border border-slate-500 bg-slate-800 text-slate-100 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_weapon_skill_type ?? null) !== (row.new_weapon_skill_type ?? null))}`}
-                                  value={row.new_weapon_skill_type ?? "None"}
-                                  onChange={(e) => setRowNewWeaponSkillType(rowId, e.currentTarget.value)}
-                                >
-                                  <For each={weaponSkillTypeOptions}>
-                                    {(skillType) => <option value={skillType}>{skillType}</option>}
-                                  </For>
-                                </select>
+                                <div class="grid grid-cols-[minmax(5.75rem,auto)_minmax(0,1fr)] gap-y-2 gap-x-2 content-start">
+                                  <div class="text-slate-300">Skill Type:</div>
+                                  <select
+                                    class={`m-0 w-full py-0 px-2 text-sm rounded-md border border-slate-500 bg-slate-800 text-slate-100 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_weapon_skill_type ?? null) !== (row.new_weapon_skill_type ?? null))}`}
+                                    value={row.new_weapon_skill_type ?? "None"}
+                                    onChange={(e) => setRowNewWeaponSkillType(rowId, e.currentTarget.value)}
+                                  >
+                                    <For each={weaponSkillTypeOptions}>
+                                      {(skillType) => <option value={skillType}>{skillType}</option>}
+                                    </For>
+                                  </select>
 
-                                <div class="text-slate-300">Jug Size:</div>
-                                <input
-                                  class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_weapon_jug_size !== row.new_weapon_jug_size)}`}
-                                  type="number"
-                                  min={0}
-                                  step={1}
-                                  value={row.new_weapon_jug_size ?? ""}
-                                  onInput={(e) => setRowNewWeaponJugSize(rowId, e.currentTarget.value)}
-                                />
+                                  <div class="text-slate-300">Jug Size:</div>
+                                  <input
+                                    class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_weapon_jug_size !== row.new_weapon_jug_size)}`}
+                                    type="number"
+                                    min={0}
+                                    step={1}
+                                    value={row.new_weapon_jug_size ?? ""}
+                                    onInput={(e) => setRowNewWeaponJugSize(rowId, e.currentTarget.value)}
+                                  />
 
-                                <div class="text-slate-300">Emote:</div>
-                                <input
-                                  class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_weapon_emote !== row.new_weapon_emote)}`}
-                                  type="number"
-                                  min={0}
-                                  step={1}
-                                  value={row.new_weapon_emote ?? ""}
-                                  onInput={(e) => setRowNewWeaponEmote(rowId, e.currentTarget.value)}
-                                />
+                                  <div class="text-slate-300">Anim.:</div>
+                                  <input
+                                    class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_weapon_emote !== row.new_weapon_emote)}`}
+                                    type="number"
+                                    min={0}
+                                    step={1}
+                                    value={row.new_weapon_emote ?? ""}
+                                    onInput={(e) => setRowNewWeaponEmote(rowId, e.currentTarget.value)}
+                                  />
+                                </div>
                               </div>
                             </Show>
                           </div>

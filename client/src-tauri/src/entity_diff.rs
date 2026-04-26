@@ -140,6 +140,10 @@ pub struct SpellDiffRow {
     pub old_mp_cost: Option<u32>,
     pub old_cast_time: Option<u32>,
     pub old_recast_time: Option<u32>,
+    pub old_range: Option<i32>,
+    pub old_radius: Option<i32>,
+    pub old_aoe_type: Option<String>,
+    pub old_valid_target_type: Option<String>,
     pub old_level_required: Option<HashMap<String, u32>>,
     pub new_index: Option<u32>,
     pub new_name: Option<String>,
@@ -150,6 +154,10 @@ pub struct SpellDiffRow {
     pub new_mp_cost: Option<u32>,
     pub new_cast_time: Option<u32>,
     pub new_recast_time: Option<u32>,
+    pub new_range: Option<i32>,
+    pub new_radius: Option<i32>,
+    pub new_aoe_type: Option<String>,
+    pub new_valid_target_type: Option<String>,
     pub new_level_required: Option<HashMap<String, u32>>,
     pub target_index: Option<u32>,
     pub choice: EntityDiffChoice,
@@ -943,6 +951,10 @@ pub fn compare_spell_files_with_text_paths(
                     let old_mp_cost = get_spell_mp_cost(old_spell);
                     let old_cast_time = get_spell_cast_time(old_spell);
                     let old_recast_time = get_spell_recast_time(old_spell);
+                    let old_range = get_spell_range(old_spell);
+                    let old_radius = get_spell_radius(old_spell);
+                    let old_aoe_type = get_spell_aoe_type(old_spell);
+                    let old_valid_target_type = get_spell_valid_target_type(old_spell);
                     let old_level_required = get_spell_level_required(old_spell);
 
                     let new_index = get_spell_index(new_spell);
@@ -956,6 +968,10 @@ pub fn compare_spell_files_with_text_paths(
                     let new_mp_cost = get_spell_mp_cost(new_spell);
                     let new_cast_time = get_spell_cast_time(new_spell);
                     let new_recast_time = get_spell_recast_time(new_spell);
+                    let new_range = get_spell_range(new_spell);
+                    let new_radius = get_spell_radius(new_spell);
+                    let new_aoe_type = get_spell_aoe_type(new_spell);
+                    let new_valid_target_type = get_spell_valid_target_type(new_spell);
                     let new_level_required = get_spell_level_required(new_spell);
 
                     let is_changed = old_index != new_index
@@ -967,6 +983,10 @@ pub fn compare_spell_files_with_text_paths(
                         || old_mp_cost != new_mp_cost
                         || old_cast_time != new_cast_time
                         || old_recast_time != new_recast_time
+                        || old_range != new_range
+                        || old_radius != new_radius
+                        || old_aoe_type != new_aoe_type
+                        || old_valid_target_type != new_valid_target_type
                         || old_level_required != new_level_required;
                     if is_changed {
                         changed_count += 1;
@@ -983,6 +1003,10 @@ pub fn compare_spell_files_with_text_paths(
                         old_mp_cost,
                         old_cast_time,
                         old_recast_time,
+                        old_range,
+                        old_radius,
+                        old_aoe_type,
+                        old_valid_target_type,
                         old_level_required,
                         new_index,
                         new_name,
@@ -993,6 +1017,10 @@ pub fn compare_spell_files_with_text_paths(
                         new_mp_cost,
                         new_cast_time,
                         new_recast_time,
+                        new_range,
+                        new_radius,
+                        new_aoe_type,
+                        new_valid_target_type,
                         new_level_required,
                         target_index: new_index.or(old_index),
                         choice: EntityDiffChoice::New,
@@ -1020,6 +1048,10 @@ pub fn compare_spell_files_with_text_paths(
                         old_mp_cost: get_spell_mp_cost(old_spell),
                         old_cast_time: get_spell_cast_time(old_spell),
                         old_recast_time: get_spell_recast_time(old_spell),
+                        old_range: get_spell_range(old_spell),
+                        old_radius: get_spell_radius(old_spell),
+                        old_aoe_type: get_spell_aoe_type(old_spell),
+                        old_valid_target_type: get_spell_valid_target_type(old_spell),
                         old_level_required: get_spell_level_required(old_spell),
                         new_index: None,
                         new_name: None,
@@ -1030,6 +1062,10 @@ pub fn compare_spell_files_with_text_paths(
                         new_mp_cost: None,
                         new_cast_time: None,
                         new_recast_time: None,
+                        new_range: None,
+                        new_radius: None,
+                        new_aoe_type: None,
+                        new_valid_target_type: None,
                         new_level_required: None,
                         target_index: old_index,
                         choice: EntityDiffChoice::Old,
@@ -1051,6 +1087,10 @@ pub fn compare_spell_files_with_text_paths(
                         old_mp_cost: None,
                         old_cast_time: None,
                         old_recast_time: None,
+                        old_range: None,
+                        old_radius: None,
+                        old_aoe_type: None,
+                        old_valid_target_type: None,
                         old_level_required: None,
                         new_index,
                         new_name: resolve_spell_name(new_spell, &spell_text),
@@ -1067,6 +1107,10 @@ pub fn compare_spell_files_with_text_paths(
                         new_mp_cost: get_spell_mp_cost(new_spell),
                         new_cast_time: get_spell_cast_time(new_spell),
                         new_recast_time: get_spell_recast_time(new_spell),
+                        new_range: get_spell_range(new_spell),
+                        new_radius: get_spell_radius(new_spell),
+                        new_aoe_type: get_spell_aoe_type(new_spell),
+                        new_valid_target_type: get_spell_valid_target_type(new_spell),
                         new_level_required: get_spell_level_required(new_spell),
                         target_index: new_index,
                         choice: EntityDiffChoice::New,
@@ -1239,6 +1283,38 @@ pub fn save_spell_diff_with_text_paths(
         });
         if let Some(recast_time) = chosen_recast_time {
             set_spell_recast_time(&mut selected_spell, recast_time);
+        }
+
+        let chosen_range = row.and_then(|row| match effective_choice {
+            EntityDiffChoice::Old => row.old_range,
+            EntityDiffChoice::New => row.new_range,
+        });
+        if let Some(range) = chosen_range {
+            set_spell_range(&mut selected_spell, range);
+        }
+
+        let chosen_radius = row.and_then(|row| match effective_choice {
+            EntityDiffChoice::Old => row.old_radius,
+            EntityDiffChoice::New => row.new_radius,
+        });
+        if let Some(radius) = chosen_radius {
+            set_spell_radius(&mut selected_spell, radius);
+        }
+
+        let chosen_aoe_type = row.and_then(|row| match effective_choice {
+            EntityDiffChoice::Old => row.old_aoe_type.clone(),
+            EntityDiffChoice::New => row.new_aoe_type.clone(),
+        });
+        if let Some(aoe_type) = chosen_aoe_type {
+            set_spell_aoe_type(&mut selected_spell, aoe_type);
+        }
+
+        let chosen_valid_target_type = row.and_then(|row| match effective_choice {
+            EntityDiffChoice::Old => row.old_valid_target_type.clone(),
+            EntityDiffChoice::New => row.new_valid_target_type.clone(),
+        });
+        if let Some(valid_target_type) = chosen_valid_target_type {
+            set_spell_valid_target_type(&mut selected_spell, valid_target_type);
         }
 
         let chosen_level_required = row.and_then(|row| match effective_choice {
@@ -2034,6 +2110,13 @@ fn get_spell_u32(item: &Value, key: &str) -> Option<u32> {
     u32::try_from(number).ok()
 }
 
+fn get_spell_i32(item: &Value, key: &str) -> Option<i32> {
+    let mapping = item.as_mapping()?;
+    let value = mapping.get(Value::String(key.to_string()))?;
+    let number = value.as_i64()?;
+    i32::try_from(number).ok()
+}
+
 fn get_spell_string(item: &Value, key: &str) -> Option<String> {
     let mapping = item.as_mapping()?;
     let value = mapping.get(Value::String(key.to_string()))?;
@@ -2067,6 +2150,22 @@ fn get_spell_mp_cost(item: &Value) -> Option<u32> {
     get_spell_u32(item, "mp_cost")
 }
 
+fn get_spell_range(item: &Value) -> Option<i32> {
+    get_spell_i32(item, "range")
+}
+
+fn get_spell_radius(item: &Value) -> Option<i32> {
+    get_spell_i32(item, "radius")
+}
+
+fn get_spell_aoe_type(item: &Value) -> Option<String> {
+    get_spell_string(item, "aoe_type")
+}
+
+fn get_spell_valid_target_type(item: &Value) -> Option<String> {
+    get_spell_string(item, "valid_target_type")
+}
+
 fn get_spell_valid_targets(item: &Value) -> Option<Vec<String>> {
     let mapping = item.as_mapping()?;
     let targets = mapping.get(Value::String("valid_targets".to_string()))?;
@@ -2093,6 +2192,22 @@ fn set_spell_u32(item: &mut Value, key: &str, value: u32) -> bool {
     true
 }
 
+fn set_spell_i32(item: &mut Value, key: &str, value: i32) -> bool {
+    let Some(mapping) = item.as_mapping_mut() else {
+        return false;
+    };
+    mapping.insert(Value::String(key.to_string()), Value::Number(value.into()));
+    true
+}
+
+fn set_spell_string(item: &mut Value, key: &str, value: String) -> bool {
+    let Some(mapping) = item.as_mapping_mut() else {
+        return false;
+    };
+    mapping.insert(Value::String(key.to_string()), Value::String(value));
+    true
+}
+
 fn set_spell_mp_cost(item: &mut Value, mp_cost: u32) -> bool {
     set_spell_u32(item, "mp_cost", mp_cost)
 }
@@ -2103,6 +2218,22 @@ fn set_spell_cast_time(item: &mut Value, cast_time: u32) -> bool {
 
 fn set_spell_recast_time(item: &mut Value, recast_time: u32) -> bool {
     set_spell_u32(item, "recast_time", recast_time)
+}
+
+fn set_spell_range(item: &mut Value, range: i32) -> bool {
+    set_spell_i32(item, "range", range)
+}
+
+fn set_spell_radius(item: &mut Value, radius: i32) -> bool {
+    set_spell_i32(item, "radius", radius)
+}
+
+fn set_spell_aoe_type(item: &mut Value, aoe_type: String) -> bool {
+    set_spell_string(item, "aoe_type", aoe_type)
+}
+
+fn set_spell_valid_target_type(item: &mut Value, valid_target_type: String) -> bool {
+    set_spell_string(item, "valid_target_type", valid_target_type)
 }
 
 fn get_spell_cast_time(item: &Value) -> Option<u32> {

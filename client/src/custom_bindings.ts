@@ -179,6 +179,18 @@ export interface EntityDiffSaveResult {
     out_dat_path: string | null;
 }
 
+export interface SpellDiffSaveResult {
+    written_count: number;
+    kept_old_count: number;
+    kept_new_count: number;
+    out_yaml_path: string;
+    out_dat_path: string | null;
+    spell_names_en_path: string | null;
+    spell_names_jp_path: string | null;
+    spell_descriptions_en_path: string | null;
+    spell_descriptions_jp_path: string | null;
+}
+
 export interface SpellDiffRow {
     row: number;
     old_index: number | null;
@@ -329,7 +341,7 @@ export async function saveSpellDiff(
     rows: SpellDiffRow[],
     outYamlPath: string,
     outDatPath: string | null,
-): Promise<Result<EntityDiffSaveResult, any>> {
+): Promise<Result<SpellDiffSaveResult, any>> {
     try {
         return {
             status: "ok",

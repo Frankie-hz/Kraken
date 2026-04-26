@@ -5,7 +5,7 @@ import { createStore } from "solid-js/store";
 import { SpellDiffRow, compareSpellFiles, copySpellDatToProject, isSpellDatMadeInProject, saveSpellDiff } from "../custom_bindings";
 import { showConfirm, showMessage } from "../dialogs";
 import { useData } from "../store";
-import { unwrap } from "../util";
+import { projectDisplayPath, unwrap } from "../util";
 
 function newFieldClass(changed: boolean) {
   return changed ? "bg-rose-950/35 text-rose-200" : "bg-emerald-950/35 text-emerald-200";
@@ -47,7 +47,7 @@ function getOutputRoot(projectRoot: string | null): string | null {
     return null;
   }
 
-  return projectRoot.replaceAll("\\", "/").replace(/\/+$/, "");
+  return `${projectRoot.replaceAll("\\", "/").replace(/\/+$/, "")}/Custom`;
 }
 
 function normalizePath(path: string) {
@@ -327,7 +327,7 @@ function spellPathFromProjectRoot(projectRoot: string | null): string | null {
   }
 
   const normalizedRoot = projectRoot.replaceAll("\\", "/").replace(/\/+$/, "");
-  return `${normalizedRoot}/${SPELL_RELATIVE_PATH}`;
+  return `${normalizedRoot}/Retail Base/${SPELL_RELATIVE_PATH}`;
 }
 
 function loadCachedState(): SpellEditorCachedState | null {
@@ -663,7 +663,7 @@ function SpellDiffTool() {
       return;
     }
     if (!spellBaseDatMade()) {
-      await showMessage("Make the Base Spell DAT first. The Spell Editor only loads DATs from the Project Folder so Kraken never edits your retail files.", {
+      await showMessage("Make the Base Spell DAT first. The Spell Editor loads from Retail Base or Custom so Kraken never edits your retail files.", {
         title: "Base DAT Required",
         kind: "warning",
       });
@@ -674,7 +674,7 @@ function SpellDiffTool() {
       return;
     }
     if (!pathIsWithinRoot(spellPath(), getProjectFolder())) {
-      await showMessage("The Spell Editor only loads spell DATs from the Project Folder. Click Make Base Spell DAT first, then reload the project copy.", {
+      await showMessage("The Spell Editor only loads spell DATs from the Project Folder. Click Make Base Spell DAT first, then reload the Retail Base copy.", {
         title: "Project Copy Required",
         kind: "warning",
       });
@@ -734,9 +734,9 @@ function SpellDiffTool() {
       await refetchSpellBaseDatMade();
       batch(() => {
         setSpellFile(copiedPath);
-        setLastNotice("Copied base spell DAT into Project Folder.");
+        setLastNotice("Copied base spell DAT into Retail Base.");
       });
-      await showMessage(`Copied base spell DAT into Project Folder.\n${copiedPath}`, {
+      await showMessage(`Copied base spell DAT into Retail Base.\n${copiedPath}`, {
         title: "Base DAT Ready",
         kind: "info",
       });
@@ -1034,7 +1034,7 @@ function SpellDiffTool() {
       return;
     }
     if (!pathIsWithinRoot(spellPath(), getProjectFolder())) {
-      await showMessage("The Spell Editor only saves from the Project Folder copy. Click Make Base Spell DAT first, then reload the project copy.", {
+      await showMessage("The Spell Editor only saves from Project Folder copies. Click Make Base Spell DAT first, then reload the Retail Base copy.", {
         title: "Project Copy Required",
         kind: "warning",
       });
@@ -1058,11 +1058,20 @@ function SpellDiffTool() {
     setSaving(true);
     try {
       const result = unwrap(await saveSpellDiff(spellPath(), spellPath(), payloadRows, outYamlPath, outDatPath));
-      setLastSavedYamlPath(result.out_yaml_path);
-      setLastSavedDatPath(result.out_dat_path ?? "");
+      const savedYamlPath = projectDisplayPath(result.out_yaml_path, getProjectFolder());
+      const savedDatPath = projectDisplayPath(result.out_dat_path, getProjectFolder());
+      const spellNamesEnPath = projectDisplayPath(result.spell_names_en_path, getProjectFolder());
+      const spellNamesJpPath = projectDisplayPath(result.spell_names_jp_path, getProjectFolder());
+      const spellDescriptionsEnPath = projectDisplayPath(result.spell_descriptions_en_path, getProjectFolder());
+      const spellDescriptionsJpPath = projectDisplayPath(result.spell_descriptions_jp_path, getProjectFolder());
+      setLastSavedYamlPath(savedYamlPath);
+      setLastSavedDatPath(savedDatPath);
+      if (result.out_dat_path) {
+        setSpellPath(result.out_dat_path);
+      }
       setLastNotice(`Saved ${result.written_count} spell entries.`);
       await showMessage(
-        `Saved ${result.written_count} spell entries.\nYAML: ${result.out_yaml_path}${result.out_dat_path ? `\nDAT: ${result.out_dat_path}` : ""}`,
+        `Saved ${result.written_count} spell entries.\nData YAML: ${savedYamlPath}${savedDatPath ? `\nData DAT: ${savedDatPath}` : ""}${spellNamesEnPath ? `\nNames EN DAT: ${spellNamesEnPath}` : ""}${spellNamesJpPath ? `\nNames JP DAT: ${spellNamesJpPath}` : ""}${spellDescriptionsEnPath ? `\nDescriptions EN DAT: ${spellDescriptionsEnPath}` : ""}${spellDescriptionsJpPath ? `\nDescriptions JP DAT: ${spellDescriptionsJpPath}` : ""}`,
         { title: "Saved", kind: "info" },
       );
     } catch (err) {

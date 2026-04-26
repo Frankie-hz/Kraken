@@ -23,7 +23,8 @@ use crate::{
     dat_query::{self, BrowseInfo, DatDescriptorInfo, TriangleMetadata, ZoneInfo},
     entity_diff::{
         self, DiffToolKind, EntityDiffResult, EntityDiffRow, EntityDiffSaveResult,
-        FolderDiffResult, ItemEditorRow, SpellDiffResult, SpellDiffRow, SpellTextPaths,
+        FolderDiffResult, ItemEditorRow, SpellDiffResult, SpellDiffRow, SpellDiffSaveResult,
+        SpellTextPaths,
     },
     errors::AppError,
     state::{AppState, FileNotification},
@@ -50,6 +51,29 @@ pub struct ItemEditorSaveResult {
     pub english_out_dat_path: Option<String>,
     pub japanese_out_yaml_path: Option<String>,
     pub japanese_out_dat_path: Option<String>,
+}
+
+const RETAIL_BASE_DIR: &str = "Retail Base";
+const CUSTOM_DIR: &str = "Custom";
+
+fn retail_base_root(project_root: &Path) -> PathBuf {
+    project_root.join(RETAIL_BASE_DIR)
+}
+
+fn custom_root(project_root: &Path) -> PathBuf {
+    project_root.join(CUSTOM_DIR)
+}
+
+fn retail_base_path(project_root: &Path, relative_path: &str) -> PathBuf {
+    retail_base_root(project_root).join(relative_path)
+}
+
+fn custom_path(project_root: &Path, relative_path: &str) -> PathBuf {
+    custom_root(project_root).join(relative_path)
+}
+
+fn path_is_within_root(path: &Path, root: &Path) -> bool {
+    path == root || path.starts_with(root)
 }
 
 fn rom_relative_path_from_path(path: &Path) -> Option<PathBuf> {
@@ -97,29 +121,39 @@ fn preferred_dat_source_path(
     project_root: Option<&PathBuf>,
 ) -> PathBuf {
     if let Some(project_root) = project_root {
-        let project_path = project_root.join(relative_path);
-        if project_path.is_file() {
-            return project_path;
+        let custom_path = custom_path(project_root, relative_path);
+        if custom_path.is_file() {
+            return custom_path;
+        }
+
+        let retail_base_path = retail_base_path(project_root, relative_path);
+        if retail_base_path.is_file() {
+            return retail_base_path;
         }
     }
 
     dat_context.ffxi_path.join(relative_path)
 }
 
-fn required_project_dat_source_path(
+fn required_project_editor_source_path(
     relative_path: &str,
     project_root: &Path,
 ) -> Result<PathBuf, AppError> {
-    let project_path = project_root.join(relative_path);
-    if project_path.is_file() {
-        Ok(project_path)
-    } else {
-        Err(anyhow!(
-            "The base DAT copy for {} was not found in the Project Folder. Click \"Make all Base DATs\" first.",
-            relative_path
-        )
-        .into())
+    let custom_path = custom_path(project_root, relative_path);
+    if custom_path.is_file() {
+        return Ok(custom_path);
     }
+
+    let retail_base_path = retail_base_path(project_root, relative_path);
+    if retail_base_path.is_file() {
+        return Ok(retail_base_path);
+    }
+
+    Err(anyhow!(
+        "The Retail Base DAT copy for {} was not found in the Project Folder. Click \"Make all Base DATs\" first.",
+        relative_path
+    )
+    .into())
 }
 
 fn build_output_paths_for_relative_path(
@@ -137,8 +171,11 @@ fn build_output_paths_for_relative_path(
     let dat_file_name = Path::new(file_name).with_extension("DAT");
 
     Ok((
-        project_root.join("Yaml").join(parent).join(yaml_file_name),
-        project_root.join(parent).join(dat_file_name),
+        custom_root(project_root)
+            .join("Yaml")
+            .join(parent)
+            .join(yaml_file_name),
+        custom_root(project_root).join(parent).join(dat_file_name),
     ))
 }
 
@@ -195,9 +232,14 @@ pub async fn resolve_dat_descriptor_path(
     // Prefer an already-copied DAT in the project folder so editor
     // selections reopen the editable file instead of re-targeting retail.
     if let Some(project_root) = project_path {
-        let project_dat_path = project_root.join(&relative_path);
-        if project_dat_path.is_file() {
-            return Ok(project_dat_path.display().to_string());
+        let custom_dat_path = custom_path(&project_root, &relative_path);
+        if custom_dat_path.is_file() {
+            return Ok(custom_dat_path.display().to_string());
+        }
+
+        let retail_base_dat_path = retail_base_path(&project_root, &relative_path);
+        if retail_base_dat_path.is_file() {
+            return Ok(retail_base_dat_path.display().to_string());
         }
     }
 
@@ -281,7 +323,8 @@ pub async fn copy_item_dats_to_project(
                 &dat_context,
             )?;
             let retail_path = dat_context.ffxi_path.join(&relative_path);
-            let copied_path = copy_dat_to_output_root(retail_path, project_root.clone())?;
+            let copied_path =
+                copy_dat_to_output_root(retail_path, retail_base_root(&project_root))?;
             copied_paths.push(copied_path.display().to_string());
         }
     }
@@ -315,7 +358,7 @@ pub async fn are_all_item_dats_made_in_project(state: AppState<'_>) -> Result<bo
         for lang in langs {
             let relative_path =
                 resolve_descriptor_relative_path(descriptor_info.descriptor, lang, &dat_context)?;
-            if !project_root.join(relative_path).is_file() {
+            if !retail_base_path(&project_root, &relative_path).is_file() {
                 return Ok(false);
             }
         }
@@ -364,17 +407,84 @@ fn spell_editor_relative_paths(
     ))
 }
 
-fn spell_editor_project_text_paths(
+fn spell_editor_text_paths_at_root(
+    dat_context: &DatContext,
+    root: &Path,
+) -> Result<SpellTextPaths, AppError> {
+    let (_, relative_paths) = spell_editor_relative_paths(dat_context)?;
+    Ok(SpellTextPaths {
+        spell_names_en: root.join(relative_paths.spell_names_en),
+        spell_names_jp: root.join(relative_paths.spell_names_jp),
+        spell_descriptions_en: root.join(relative_paths.spell_descriptions_en),
+        spell_descriptions_jp: root.join(relative_paths.spell_descriptions_jp),
+    })
+}
+
+fn spell_text_paths_complete(paths: &SpellTextPaths) -> bool {
+    paths.spell_names_en.is_file()
+        && paths.spell_names_jp.is_file()
+        && paths.spell_descriptions_en.is_file()
+        && paths.spell_descriptions_jp.is_file()
+}
+
+fn spell_editor_source_text_paths(
+    dat_context: &DatContext,
+    project_root: &Path,
+    source_path: &Path,
+) -> Result<SpellTextPaths, AppError> {
+    let custom_paths = spell_editor_text_paths_at_root(dat_context, &custom_root(project_root))?;
+    let retail_base_paths =
+        spell_editor_text_paths_at_root(dat_context, &retail_base_root(project_root))?;
+
+    if path_is_within_root(source_path, &custom_root(project_root))
+        && spell_text_paths_complete(&custom_paths)
+    {
+        return Ok(custom_paths);
+    }
+
+    if spell_text_paths_complete(&retail_base_paths) {
+        return Ok(retail_base_paths);
+    }
+
+    if spell_text_paths_complete(&custom_paths) {
+        return Ok(custom_paths);
+    }
+
+    Ok(retail_base_paths)
+}
+
+fn ensure_custom_spell_text_paths(
     dat_context: &DatContext,
     project_root: &Path,
 ) -> Result<SpellTextPaths, AppError> {
     let (_, relative_paths) = spell_editor_relative_paths(dat_context)?;
-    Ok(SpellTextPaths {
-        spell_names_en: project_root.join(relative_paths.spell_names_en),
-        spell_names_jp: project_root.join(relative_paths.spell_names_jp),
-        spell_descriptions_en: project_root.join(relative_paths.spell_descriptions_en),
-        spell_descriptions_jp: project_root.join(relative_paths.spell_descriptions_jp),
-    })
+    let relative_paths = [
+        relative_paths.spell_names_en,
+        relative_paths.spell_names_jp,
+        relative_paths.spell_descriptions_en,
+        relative_paths.spell_descriptions_jp,
+    ];
+
+    for relative_path in &relative_paths {
+        let destination_path = custom_path(project_root, &relative_path.to_string_lossy());
+        if destination_path.is_file() {
+            continue;
+        }
+
+        let source_path = retail_base_path(project_root, &relative_path.to_string_lossy());
+        let source_path = if source_path.is_file() {
+            source_path
+        } else {
+            dat_context.ffxi_path.join(relative_path)
+        };
+
+        if let Some(parent) = destination_path.parent() {
+            fs::create_dir_all(parent).map_err(anyhow::Error::from)?;
+        }
+        fs::copy(source_path, destination_path).map_err(anyhow::Error::from)?;
+    }
+
+    spell_editor_text_paths_at_root(dat_context, &custom_root(project_root))
 }
 
 #[tauri::command]
@@ -396,7 +506,7 @@ pub async fn copy_spell_dat_to_project(state: AppState<'_>) -> Result<String, Ap
     let (data_menu_relative, text_relative_paths) = spell_editor_relative_paths(&dat_context)?;
     let copied_path = copy_dat_to_output_root(
         dat_context.ffxi_path.join(data_menu_relative),
-        project_root.clone(),
+        retail_base_root(&project_root),
     )?;
     for relative_path in [
         text_relative_paths.spell_names_en,
@@ -406,7 +516,7 @@ pub async fn copy_spell_dat_to_project(state: AppState<'_>) -> Result<String, Ap
     ] {
         copy_dat_to_output_root(
             dat_context.ffxi_path.join(relative_path),
-            project_root.clone(),
+            retail_base_root(&project_root),
         )?;
     }
     Ok(copied_path.display().to_string())
@@ -430,19 +540,21 @@ pub async fn is_spell_dat_made_in_project(state: AppState<'_>) -> Result<bool, A
             .ok_or(anyhow!("No DAT context."))?
     };
     let (data_menu_relative, text_relative_paths) = spell_editor_relative_paths(&dat_context)?;
-    Ok(project_root.join(data_menu_relative).is_file()
-        && project_root
-            .join(text_relative_paths.spell_names_en)
-            .is_file()
-        && project_root
-            .join(text_relative_paths.spell_names_jp)
-            .is_file()
-        && project_root
-            .join(text_relative_paths.spell_descriptions_en)
-            .is_file()
-        && project_root
-            .join(text_relative_paths.spell_descriptions_jp)
-            .is_file())
+    Ok(
+        retail_base_path(&project_root, &data_menu_relative).is_file()
+            && retail_base_root(&project_root)
+                .join(text_relative_paths.spell_names_en)
+                .is_file()
+            && retail_base_root(&project_root)
+                .join(text_relative_paths.spell_names_jp)
+                .is_file()
+            && retail_base_root(&project_root)
+                .join(text_relative_paths.spell_descriptions_en)
+                .is_file()
+            && retail_base_root(&project_root)
+                .join(text_relative_paths.spell_descriptions_jp)
+                .is_file(),
+    )
 }
 
 #[tauri::command]
@@ -897,7 +1009,8 @@ pub async fn load_item_editor_data(
 
     let english_relative =
         resolve_descriptor_relative_path(descriptor, DatLanguage::English, &dat_context)?;
-    let english_source_path = required_project_dat_source_path(&english_relative, &project_root)?;
+    let english_source_path =
+        required_project_editor_source_path(&english_relative, &project_root)?;
     let (english_output_yaml_path, english_output_dat_path) =
         build_output_paths_for_relative_path(&english_relative, &project_root)?;
 
@@ -906,7 +1019,7 @@ pub async fn load_item_editor_data(
             let japanese_relative =
                 resolve_descriptor_relative_path(descriptor, DatLanguage::Japanese, &dat_context)?;
             let japanese_source_path =
-                required_project_dat_source_path(&japanese_relative, &project_root)?;
+                required_project_editor_source_path(&japanese_relative, &project_root)?;
             let (japanese_output_yaml_path, japanese_output_dat_path) =
                 build_output_paths_for_relative_path(&japanese_relative, &project_root)?;
 
@@ -950,9 +1063,11 @@ pub async fn compare_spell_files(
     let spell_text_paths = {
         let state = state.read();
         match (state.dat_context.as_ref(), state.project_path.as_ref()) {
-            (Some(dat_context), Some(project_root)) => {
-                Some(spell_editor_project_text_paths(dat_context, project_root)?)
-            }
+            (Some(dat_context), Some(project_root)) => Some(spell_editor_source_text_paths(
+                dat_context,
+                project_root,
+                &new_path,
+            )?),
             _ => None,
         }
     };
@@ -1105,12 +1220,12 @@ pub async fn save_spell_diff(
     out_yaml_path: PathBuf,
     out_dat_path: Option<PathBuf>,
     state: AppState<'_>,
-) -> Result<EntityDiffSaveResult, AppError> {
+) -> Result<SpellDiffSaveResult, AppError> {
     let spell_text_paths = {
         let state = state.read();
         match (state.dat_context.as_ref(), state.project_path.as_ref()) {
             (Some(dat_context), Some(project_root)) => {
-                Some(spell_editor_project_text_paths(dat_context, project_root)?)
+                Some(ensure_custom_spell_text_paths(dat_context, project_root)?)
             }
             _ => None,
         }

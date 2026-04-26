@@ -190,6 +190,10 @@ export interface SpellDiffRow {
     old_mp_cost: number | null;
     old_cast_time: number | null;
     old_recast_time: number | null;
+    old_range: number | null;
+    old_radius: number | null;
+    old_aoe_type: string | null;
+    old_valid_target_type: string | null;
     old_level_required: Record<string, number> | null;
     new_index: number | null;
     new_name: string | null;
@@ -200,6 +204,10 @@ export interface SpellDiffRow {
     new_mp_cost: number | null;
     new_cast_time: number | null;
     new_recast_time: number | null;
+    new_range: number | null;
+    new_radius: number | null;
+    new_aoe_type: string | null;
+    new_valid_target_type: string | null;
     new_level_required: Record<string, number> | null;
     target_index: number | null;
     choice: EntityDiffChoice;

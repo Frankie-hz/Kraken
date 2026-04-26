@@ -2,7 +2,7 @@ import { useSearchParams } from "@solidjs/router";
 import { For, Show, batch, createDeferred, createEffect, createMemo, createResource, createSignal, onCleanup, onMount } from "solid-js";
 import { createStore } from "solid-js/store";
 import { commands, DatDescriptor, DatDescriptorInfo } from "../bindings";
-import { ItemEditorRow, ItemEditorSaveTarget, areAllItemDatsMadeInProject, copyItemDatsToProject, loadItemEditorData, saveItemEditorData } from "../custom_bindings";
+import { ItemEditorRow, ItemEditorSaveTarget, areAllItemDatsMadeInProject, copyItemDatsToProject, loadItemEditorData, resetItemEditorDataToRetailBase, saveItemEditorData } from "../custom_bindings";
 import { showConfirm, showMessage } from "../dialogs";
 import { useData } from "../store";
 import { projectDisplayPath, unwrap } from "../util";
@@ -639,6 +639,7 @@ function ItemEditorTool() {
   const [isSaving, setSaving] = createSignal(false);
   const [isResolvingDat, setResolvingDat] = createSignal(false);
   const [isMakingBaseDats, setMakingBaseDats] = createSignal(false);
+  const [isResettingToRetailBase, setResettingToRetailBase] = createSignal(false);
   const [rowsVersion, setRowsVersion] = createSignal(0);
 
   const [scrollTop, setScrollTop] = createSignal(0);
@@ -835,6 +836,49 @@ function ItemEditorTool() {
       await showMessage(`${err}`, { title: "Copy Error", kind: "error" });
     } finally {
       setMakingBaseDats(false);
+    }
+  };
+
+  const resetItemDatToRetailBase = async () => {
+    const descriptor = selectedDatDescriptor();
+    if (!descriptor) {
+      await showMessage("Select the item DAT set first.", { title: "Reset Blocked", kind: "warning" });
+      return;
+    }
+    if (!getProjectFolder()) {
+      await showMessage("Set a Project Folder first.", { title: "Project Folder Required", kind: "warning" });
+      return;
+    }
+    if (!allBaseDatsMade()) {
+      await showMessage("Make all Base DATs first so Kraken has Retail Base files to restore from.", {
+        title: "Base DATs Required",
+        kind: "warning",
+      });
+      return;
+    }
+
+    const confirmed = await showConfirm(
+      "Reset this item DAT set in Custom back to Retail Base? This overwrites the current Custom DAT copy.",
+      {
+        title: "Reset To Retail Base",
+        kind: "warning",
+        okLabel: "Reset DAT",
+        cancelLabel: "Cancel",
+      },
+    );
+    if (confirmed !== true) {
+      return;
+    }
+
+    setResettingToRetailBase(true);
+    try {
+      const resetPaths = unwrap(await resetItemEditorDataToRetailBase(descriptor));
+      await loadItemData(descriptor);
+      setLastNotice(`Reset ${resetPaths.length} item DAT${resetPaths.length === 1 ? "" : "s"} to Retail Base.`);
+    } catch (err) {
+      await showMessage(`${err}`, { title: "Reset Error", kind: "error" });
+    } finally {
+      setResettingToRetailBase(false);
     }
   };
 
@@ -1630,19 +1674,30 @@ function ItemEditorTool() {
               <div class="italic text-slate-300">{lastNotice()}</div>
             </Show>
             <Show when={rows.length > 0}>
-              <div class="flex items-center gap-2">
+              <div class="flex flex-col items-end gap-1">
                 <div class="text-slate-300">
                   Loaded: {rows.length} | Edited: {editedRowIds().size}
                 </div>
-                <button
-                  class={compactButtonClass()}
-                  disabled={editedRowIds().size === 0}
-                  onClick={() => {
-                    void resetAllRowsToOriginal();
-                  }}
-                >
-                  Reset All
-                </button>
+                <div class="flex flex-wrap justify-end gap-2">
+                  <button
+                    class={compactButtonClass()}
+                    disabled={isLoading() || isSaving() || isResolvingDat() || isMakingBaseDats() || isResettingToRetailBase() || !selectedDatDescriptor() || !allBaseDatsMade()}
+                    onClick={() => {
+                      void resetItemDatToRetailBase();
+                    }}
+                  >
+                    {isResettingToRetailBase() ? "Resetting..." : "Reset DAT to Retail Base"}
+                  </button>
+                  <button
+                    class={compactButtonClass()}
+                    disabled={editedRowIds().size === 0}
+                    onClick={() => {
+                      void resetAllRowsToOriginal();
+                    }}
+                  >
+                    Reset All
+                  </button>
+                </div>
               </div>
             </Show>
           </div>

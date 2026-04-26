@@ -168,6 +168,28 @@ const VALID_TARGET_LABELS: Record<string, string> = {
   PartyMember: "Party",
 };
 
+const AOE_TYPE_OPTIONS = ["None", "TargetAoe", "SelfConal", "SelfAoe"];
+const VALID_TARGET_TYPE_OPTIONS = [
+  "All",
+  "SelfTarget",
+  "SelfAoe",
+  "SelfAoe2",
+  "MobSelfAoe",
+  "Party",
+  "PartyAoe",
+  "Luopan",
+  "Pet",
+  "Pc",
+  "SelfPet",
+  "Mob",
+  "MobAoe",
+  "Dead",
+];
+
+const COMPACT_VALUE_INPUT_CLASS = "hide-spin-buttons m-0 min-w-0 w-full py-0 px-1 text-xs font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none";
+const COMPACT_VALUE_SELECT_CLASS = "m-0 min-w-0 w-full py-0 px-1 text-xs rounded-md border border-slate-500 bg-slate-800 text-slate-100 focus:border-slate-300 focus:outline-none";
+const COMPACT_VALUE_FIELD_CLASS = "m-0 grid grid-cols-[3rem_minmax(0,1fr)] items-center gap-0.5 text-[11px] font-normal uppercase tracking-wide text-slate-300";
+
 function normalizeStringList(values: string[] | null | undefined) {
   const normalized = (values ?? [])
     .map((value) => value.trim())
@@ -221,6 +243,10 @@ function rowMatchesFilter(row: SpellDiffRow, filterText: string) {
     row.new_mp_cost ?? row.old_mp_cost,
     row.new_cast_time ?? row.old_cast_time,
     row.new_recast_time ?? row.old_recast_time,
+    row.new_range ?? row.old_range,
+    row.new_radius ?? row.old_radius,
+    row.new_aoe_type ?? row.old_aoe_type,
+    row.new_valid_target_type ?? row.old_valid_target_type,
     descriptionEn,
     descriptionJp,
     validTargets,
@@ -264,13 +290,12 @@ const TEXTAREA_WRAP_SAFETY_PX = 10;
 const TEXTAREA_ROW_PADDING_PX = 12;
 const VALID_TARGET_ROW_HEIGHT_PX = 18;
 const LEVEL_EXTRA_HEIGHT_PX = 18;
+const EDITABLE_VALUES_MIN_HEIGHT_PX = 96;
 
 // Weighted realtive to each other
 const INDEX_COLUMN_WEIGHT = 5;
 const NAMES_COLUMN_WEIGHT = 13;
-const MP_COLUMN_WEIGHT = 6;
-const CAST_COLUMN_WEIGHT = 5;
-const RECAST_COLUMN_WEIGHT = 5;
+const EDITABLE_VALUES_COLUMN_WEIGHT = 22;
 const VALID_TARGETS_COLUMN_WEIGHT = 20;
 const DESCRIPTION_COLUMN_WEIGHT = 18.5;
 const LEVEL_COLUMN_WEIGHT = 14;
@@ -384,7 +409,7 @@ function SpellDiffTool() {
   const spellEditorColumnCount = createMemo(() =>
     1 +
     (showNamesColumn() ? 1 : 0) +
-    (showTimingColumns() ? 3 : 0) +
+    (showTimingColumns() ? 1 : 0) +
     (showValidTargetsColumn() ? 1 : 0) +
     (showDescriptionsColumn() ? 2 : 0) +
     (showLevelColumn() ? 1 : 0)
@@ -401,7 +426,7 @@ function SpellDiffTool() {
     const activeColumnWeight =
       INDEX_COLUMN_WEIGHT +
       (showNamesColumn() ? NAMES_COLUMN_WEIGHT : 0) +
-      (showTimingColumns() ? MP_COLUMN_WEIGHT + CAST_COLUMN_WEIGHT + RECAST_COLUMN_WEIGHT : 0) +
+      (showTimingColumns() ? EDITABLE_VALUES_COLUMN_WEIGHT : 0) +
       (validTargetsVisible ? VALID_TARGETS_COLUMN_WEIGHT : 0) +
       (descriptionsVisible ? DESCRIPTION_COLUMN_WEIGHT * 2 : 0) +
       (levelVisible ? LEVEL_COLUMN_WEIGHT : 0);
@@ -434,8 +459,10 @@ function SpellDiffTool() {
       const descriptionJpHeight = Math.max(TEXTAREA_MIN_HEIGHT_PX, descriptionJpLines * TEXTAREA_LINE_HEIGHT_PX + TEXTAREA_VERTICAL_CHROME_PX + TEXTAREA_WRAP_SAFETY_PX);
       const levelHeight = Math.max(TEXTAREA_MIN_HEIGHT_PX, levelLines * TEXTAREA_LINE_HEIGHT_PX + TEXTAREA_VERTICAL_CHROME_PX + TEXTAREA_WRAP_SAFETY_PX + LEVEL_EXTRA_HEIGHT_PX);
       const validTargetsHeight = Math.max(TEXTAREA_MIN_HEIGHT_PX, targetLines * VALID_TARGET_ROW_HEIGHT_PX + TEXTAREA_VERTICAL_CHROME_PX);
+      const editableValuesHeight = showTimingColumns() ? EDITABLE_VALUES_MIN_HEIGHT_PX : TEXTAREA_MIN_HEIGHT_PX;
       const controlHeight = Math.max(
         MIN_VIRTUAL_ROW_HEIGHT_PX,
+        editableValuesHeight,
         descriptionEnHeight,
         descriptionJpHeight,
         validTargetsHeight,
@@ -529,6 +556,10 @@ function SpellDiffTool() {
       (rowWithDrafts.old_mp_cost ?? null) !== (rowWithDrafts.new_mp_cost ?? null) ||
       (rowWithDrafts.old_cast_time ?? null) !== (rowWithDrafts.new_cast_time ?? null) ||
       (rowWithDrafts.old_recast_time ?? null) !== (rowWithDrafts.new_recast_time ?? null) ||
+      (rowWithDrafts.old_range ?? null) !== (rowWithDrafts.new_range ?? null) ||
+      (rowWithDrafts.old_radius ?? null) !== (rowWithDrafts.new_radius ?? null) ||
+      (rowWithDrafts.old_aoe_type ?? null) !== (rowWithDrafts.new_aoe_type ?? null) ||
+      (rowWithDrafts.old_valid_target_type ?? null) !== (rowWithDrafts.new_valid_target_type ?? null) ||
       !spellLevelsEqual(rowWithDrafts.old_level_required, rowWithDrafts.new_level_required)
     );
   };
@@ -666,6 +697,10 @@ function SpellDiffTool() {
           new_mp_cost: row.new_mp_cost ?? row.old_mp_cost,
           new_cast_time: row.new_cast_time ?? row.old_cast_time,
           new_recast_time: row.new_recast_time ?? row.old_recast_time,
+          new_range: row.new_range ?? row.old_range,
+          new_radius: row.new_radius ?? row.old_radius,
+          new_aoe_type: row.new_aoe_type ?? row.old_aoe_type,
+          new_valid_target_type: row.new_valid_target_type ?? row.old_valid_target_type,
           new_level_required: row.new_level_required ?? row.old_level_required ?? {},
         }));
         setRows(() => preparedRows);
@@ -839,9 +874,28 @@ function SpellDiffTool() {
     setRows(rowIndex, key, Math.trunc(parsed));
   };
 
+  const setRowNewI32 = (rowId: number, key: "new_range" | "new_radius", value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed) || parsed < -128 || parsed > 127) {
+      return;
+    }
+
+    const rowIndex = rowIndexById().get(rowId);
+    if (rowIndex === undefined) {
+      return;
+    }
+
+    setRows(rowIndex, key, Math.trunc(parsed));
+  };
+
   const setRowNewString = (
     rowId: number,
-    key: "new_name" | "new_name_jp" | "new_description_en" | "new_description_jp",
+    key: "new_name" | "new_name_jp" | "new_description_en" | "new_description_jp" | "new_aoe_type" | "new_valid_target_type",
     value: string,
   ) => {
     const rowIndex = rowIndexById().get(rowId);
@@ -956,6 +1010,10 @@ function SpellDiffTool() {
       new_mp_cost: row.old_mp_cost,
       new_cast_time: row.old_cast_time,
       new_recast_time: row.old_recast_time,
+      new_range: row.old_range,
+      new_radius: row.old_radius,
+      new_aoe_type: row.old_aoe_type,
+      new_valid_target_type: row.old_valid_target_type,
       new_level_required: row.old_level_required,
     }));
 
@@ -1091,7 +1149,7 @@ function SpellDiffTool() {
               <button class={compactButtonClass(showTimingColumns())} onClick={() => {
                 setShowTimingColumns((visible) => !visible);
                 refreshRowMetrics();
-              }}>Timing</button>
+              }}>Editable Values</button>
               <button class={compactButtonClass(showValidTargetsColumn())} onClick={() => {
                 setShowValidTargetsColumn((visible) => !visible);
                 refreshRowMetrics();
@@ -1145,9 +1203,7 @@ function SpellDiffTool() {
                   <col style={{ width: `${NAMES_COLUMN_WEIGHT}%` }} />
                 </Show>
                 <Show when={showTimingColumns()}>
-                  <col style={{ width: `${MP_COLUMN_WEIGHT}%` }} />
-                  <col style={{ width: `${CAST_COLUMN_WEIGHT}%` }} />
-                  <col style={{ width: `${RECAST_COLUMN_WEIGHT}%` }} />
+                  <col style={{ width: `${EDITABLE_VALUES_COLUMN_WEIGHT}%` }} />
                 </Show>
                 <Show when={showValidTargetsColumn()}>
                   <col style={{ width: `${VALID_TARGETS_COLUMN_WEIGHT}%` }} />
@@ -1167,9 +1223,7 @@ function SpellDiffTool() {
                     <th>Names</th>
                   </Show>
                   <Show when={showTimingColumns()}>
-                    <th>MP</th>
-                    <th>Cast</th>
-                    <th>Recast</th>
+                    <th>Editable Values</th>
                   </Show>
                   <Show when={showValidTargetsColumn()}>
                     <th>Valid Targets</th>
@@ -1198,6 +1252,14 @@ function SpellDiffTool() {
                         const rowMetrics = virtualLayout().metricsByRow.get(row.row) ?? DEFAULT_ROW_METRICS;
                         const currentValidTargets = normalizeStringList(row.new_valid_targets ?? row.old_valid_targets);
                         const validTargetsChanged = !stringListsEqual(row.old_valid_targets, row.new_valid_targets);
+                        const editableValuesChanged =
+                          (row.old_mp_cost ?? null) !== (row.new_mp_cost ?? null) ||
+                          (row.old_cast_time ?? null) !== (row.new_cast_time ?? null) ||
+                          (row.old_recast_time ?? null) !== (row.new_recast_time ?? null) ||
+                          (row.old_range ?? null) !== (row.new_range ?? null) ||
+                          (row.old_radius ?? null) !== (row.new_radius ?? null) ||
+                          (row.old_aoe_type ?? null) !== (row.new_aoe_type ?? null) ||
+                          (row.old_valid_target_type ?? null) !== (row.new_valid_target_type ?? null);
                         return (
                           <>
                       <td class="font-mono truncate">{row.new_index ?? row.old_index ?? "-"}</td>
@@ -1224,41 +1286,100 @@ function SpellDiffTool() {
                         </td>
                       </Show>
                       <Show when={showTimingColumns()}>
-                        <td class={newFieldClass((row.old_mp_cost ?? null) !== (row.new_mp_cost ?? null))}>
-                          <input
-                            class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_mp_cost ?? null) !== (row.new_mp_cost ?? null))}`}
-                            type="number"
-                            min={0}
-                            step={1}
-                            value={row.new_mp_cost ?? ""}
-                            onInput={(e) => setRowNewU32(row.row, "new_mp_cost", e.currentTarget.value)}
-                          />
-                        </td>
-                        <td class={newFieldClass((row.old_cast_time ?? null) !== (row.new_cast_time ?? null))}>
-                          <input
-                            class={`hide-spin-buttons m-0 w-full py-0 px-1 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_cast_time ?? null) !== (row.new_cast_time ?? null))}`}
-                            type="number"
-                            min={0}
-                            step={1}
-                            value={row.new_cast_time ?? ""}
-                            onInput={(e) => setRowNewU32(row.row, "new_cast_time", e.currentTarget.value)}
-                          />
-                        </td>
-                        <td class={newFieldClass((row.old_recast_time ?? null) !== (row.new_recast_time ?? null))}>
-                          <input
-                            class={`hide-spin-buttons m-0 w-full py-0 px-1 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_recast_time ?? null) !== (row.new_recast_time ?? null))}`}
-                            type="number"
-                            min={0}
-                            step={1}
-                            value={row.new_recast_time ?? ""}
-                            onInput={(e) => setRowNewU32(row.row, "new_recast_time", e.currentTarget.value)}
-                          />
+                        <td class={newFieldClass(editableValuesChanged)}>
+                          <div class="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-x-3 gap-y-1 rounded-md border border-slate-500 px-2 py-1">
+                            <div class="flex min-w-0 flex-col gap-1">
+                              <label class={COMPACT_VALUE_FIELD_CLASS}>
+                                <span>MP</span>
+                                <input
+                                  class={`${COMPACT_VALUE_INPUT_CLASS} ${newFieldClass((row.old_mp_cost ?? null) !== (row.new_mp_cost ?? null))}`}
+                                  type="number"
+                                  min={0}
+                                  step={1}
+                                  value={row.new_mp_cost ?? ""}
+                                  onInput={(e) => setRowNewU32(row.row, "new_mp_cost", e.currentTarget.value)}
+                                />
+                              </label>
+                              <label class={COMPACT_VALUE_FIELD_CLASS}>
+                                <span>Cast</span>
+                                <input
+                                  class={`${COMPACT_VALUE_INPUT_CLASS} ${newFieldClass((row.old_cast_time ?? null) !== (row.new_cast_time ?? null))}`}
+                                  type="number"
+                                  min={0}
+                                  step={1}
+                                  value={row.new_cast_time ?? ""}
+                                  onInput={(e) => setRowNewU32(row.row, "new_cast_time", e.currentTarget.value)}
+                                />
+                              </label>
+                              <label class={COMPACT_VALUE_FIELD_CLASS}>
+                                <span>Recast</span>
+                                <input
+                                  class={`${COMPACT_VALUE_INPUT_CLASS} ${newFieldClass((row.old_recast_time ?? null) !== (row.new_recast_time ?? null))}`}
+                                  type="number"
+                                  min={0}
+                                  step={1}
+                                  value={row.new_recast_time ?? ""}
+                                  onInput={(e) => setRowNewU32(row.row, "new_recast_time", e.currentTarget.value)}
+                                />
+                              </label>
+                              <label class={COMPACT_VALUE_FIELD_CLASS}>
+                                <span>Range</span>
+                                <input
+                                  class={`${COMPACT_VALUE_INPUT_CLASS} ${newFieldClass((row.old_range ?? null) !== (row.new_range ?? null))}`}
+                                  type="number"
+                                  min={-128}
+                                  max={127}
+                                  step={1}
+                                  value={row.new_range ?? ""}
+                                  onInput={(e) => setRowNewI32(row.row, "new_range", e.currentTarget.value)}
+                                />
+                              </label>
+                            </div>
+                            <div class="flex min-w-0 flex-col gap-1">
+                              <label class={COMPACT_VALUE_FIELD_CLASS}>
+                                <span>Radius</span>
+                                <input
+                                  class={`${COMPACT_VALUE_INPUT_CLASS} ${newFieldClass((row.old_radius ?? null) !== (row.new_radius ?? null))}`}
+                                  type="number"
+                                  min={-128}
+                                  max={127}
+                                  step={1}
+                                  value={row.new_radius ?? ""}
+                                  onInput={(e) => setRowNewI32(row.row, "new_radius", e.currentTarget.value)}
+                                />
+                              </label>
+                              <label class={COMPACT_VALUE_FIELD_CLASS}>
+                                <span>AoE</span>
+                                <select
+                                  class={`${COMPACT_VALUE_SELECT_CLASS} ${newFieldClass((row.old_aoe_type ?? null) !== (row.new_aoe_type ?? null))}`}
+                                  value={row.new_aoe_type ?? ""}
+                                  onChange={(e) => setRowNewString(row.row, "new_aoe_type", e.currentTarget.value)}
+                                >
+                                  <For each={AOE_TYPE_OPTIONS}>
+                                    {(option) => <option value={option}>{option}</option>}
+                                  </For>
+                                </select>
+                              </label>
+                              <label class={COMPACT_VALUE_FIELD_CLASS}>
+                                <span>Type</span>
+                                <select
+                                  class={`${COMPACT_VALUE_SELECT_CLASS} ${newFieldClass((row.old_valid_target_type ?? null) !== (row.new_valid_target_type ?? null))}`}
+                                  value={row.new_valid_target_type ?? ""}
+                                  onChange={(e) => setRowNewString(row.row, "new_valid_target_type", e.currentTarget.value)}
+                                >
+                                  <For each={VALID_TARGET_TYPE_OPTIONS}>
+                                    {(option) => <option value={option}>{option}</option>}
+                                  </For>
+                                </select>
+                              </label>
+                            </div>
+                          </div>
                         </td>
                       </Show>
                       <Show when={showValidTargetsColumn()}>
                         <td class={newFieldClass(validTargetsChanged)}>
                           <div
-                            class="grid grid-cols-3 gap-x-2 gap-y-0.5 overflow-hidden rounded-md border border-slate-500 px-2 py-1 text-[11px] leading-4"
+                            class="grid grid-cols-3 gap-x-1 gap-y-0.5 overflow-hidden rounded-md border border-slate-500 px-1.5 py-1 text-[11px] leading-4"
                             style={{ height: `${rowMetrics.validTargetsHeight}px` }}
                           >
                             <For each={validTargetOptionsForValues(row.old_valid_targets, row.new_valid_targets)}>

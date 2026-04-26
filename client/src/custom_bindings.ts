@@ -33,9 +33,27 @@ export async function areAllItemDatsMadeInProject(): Promise<Result<boolean, any
     }
 }
 
+export async function resetItemEditorDataToRetailBase(descriptor: DatDescriptor): Promise<Result<string[], any>> {
+    try {
+        return { status: "ok", data: await TAURI_INVOKE("reset_item_editor_data_to_retail_base", { descriptor }) };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        else return { status: "error", error: e as any };
+    }
+}
+
 export async function copySpellDatToProject(): Promise<Result<string, any>> {
     try {
         return { status: "ok", data: await TAURI_INVOKE("copy_spell_dat_to_project") };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        else return { status: "error", error: e as any };
+    }
+}
+
+export async function resetSpellDatToRetailBase(): Promise<Result<string, any>> {
+    try {
+        return { status: "ok", data: await TAURI_INVOKE("reset_spell_dat_to_retail_base") };
     } catch (e) {
         if (e instanceof Error) throw e;
         else return { status: "error", error: e as any };

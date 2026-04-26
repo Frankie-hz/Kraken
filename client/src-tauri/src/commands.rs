@@ -276,6 +276,28 @@ fn copy_dat_to_output_root(
     Ok(destination_path)
 }
 
+fn copy_retail_base_to_custom(
+    relative_path: &str,
+    project_root: &Path,
+) -> Result<PathBuf, AppError> {
+    let source_path = retail_base_path(project_root, relative_path);
+    if !source_path.is_file() {
+        return Err(anyhow!(
+            "Retail Base DAT copy for {} was not found. Re-sync the base DATs first.",
+            relative_path
+        )
+        .into());
+    }
+
+    let destination_path = custom_path(project_root, relative_path);
+    if let Some(parent) = destination_path.parent() {
+        fs::create_dir_all(parent).map_err(anyhow::Error::from)?;
+    }
+    fs::copy(source_path, &destination_path).map_err(anyhow::Error::from)?;
+
+    Ok(destination_path)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn copy_item_dats_to_project(
@@ -331,6 +353,49 @@ pub async fn copy_item_dats_to_project(
 
     copied_paths.sort();
     Ok(copied_paths)
+}
+
+#[tauri::command]
+pub async fn reset_item_editor_data_to_retail_base(
+    descriptor: DatDescriptor,
+    state: AppState<'_>,
+) -> Result<Vec<String>, AppError> {
+    let (dat_context, project_root) = {
+        let state = state.read();
+        (
+            state
+                .dat_context
+                .clone()
+                .ok_or(anyhow!("No DAT context."))?,
+            state
+                .project_path
+                .clone()
+                .ok_or(anyhow!("No project folder selected."))?,
+        )
+    };
+
+    let mut reset_paths = Vec::new();
+
+    let english_relative =
+        resolve_descriptor_relative_path(descriptor, DatLanguage::English, &dat_context)?;
+    reset_paths.push(copy_retail_base_to_custom(
+        &english_relative,
+        &project_root,
+    )?);
+
+    if descriptor.has_jp_dat() {
+        let japanese_relative =
+            resolve_descriptor_relative_path(descriptor, DatLanguage::Japanese, &dat_context)?;
+        reset_paths.push(copy_retail_base_to_custom(
+            &japanese_relative,
+            &project_root,
+        )?);
+    }
+
+    Ok(reset_paths
+        .into_iter()
+        .map(|path| path.display().to_string())
+        .collect())
 }
 
 #[tauri::command]
@@ -520,6 +585,37 @@ pub async fn copy_spell_dat_to_project(state: AppState<'_>) -> Result<String, Ap
         )?;
     }
     Ok(copied_path.display().to_string())
+}
+
+#[tauri::command]
+pub async fn reset_spell_dat_to_retail_base(state: AppState<'_>) -> Result<String, AppError> {
+    let (dat_context, project_root) = {
+        let state = state.read();
+        (
+            state
+                .dat_context
+                .clone()
+                .ok_or(anyhow!("No DAT context."))?,
+            state
+                .project_path
+                .clone()
+                .ok_or(anyhow!("No project folder selected."))?,
+        )
+    };
+
+    let (data_menu_relative, text_relative_paths) = spell_editor_relative_paths(&dat_context)?;
+    let data_menu_path = copy_retail_base_to_custom(&data_menu_relative, &project_root)?;
+
+    for relative_path in [
+        text_relative_paths.spell_names_en,
+        text_relative_paths.spell_names_jp,
+        text_relative_paths.spell_descriptions_en,
+        text_relative_paths.spell_descriptions_jp,
+    ] {
+        copy_retail_base_to_custom(&relative_path.to_string_lossy(), &project_root)?;
+    }
+
+    Ok(data_menu_path.display().to_string())
 }
 
 #[tauri::command]

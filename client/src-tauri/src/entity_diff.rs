@@ -1226,9 +1226,8 @@ pub fn save_spell_diff_with_text_paths(
         {
             set_spell_index(&mut selected_spell, target_index);
         }
-        let target_text_id = get_spell_index(&selected_spell)
-            .or_else(|| get_spell_id(&selected_spell))
-            .or_else(|| row.and_then(|row| row.target_index));
+        let target_text_id =
+            get_spell_index(&selected_spell).or_else(|| row.and_then(|row| row.target_index));
 
         let chosen_valid_targets = row.and_then(|row| match effective_choice {
             EntityDiffChoice::Old => row.old_valid_targets.clone(),
@@ -1747,7 +1746,6 @@ struct SpellTextTables {
     spell_names_jp: HashMap<u32, String>,
     spell_descriptions_en: HashMap<u32, String>,
     spell_descriptions_jp: HashMap<u32, String>,
-    ability_names_en: HashMap<u32, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -2142,10 +2140,6 @@ fn get_spell_name(item: &Value) -> Option<String> {
     get_spell_string(item, "name")
 }
 
-fn get_spell_id(item: &Value) -> Option<u32> {
-    get_spell_u32(item, "id")
-}
-
 fn get_spell_mp_cost(item: &Value) -> Option<u32> {
     get_spell_u32(item, "mp_cost")
 }
@@ -2282,31 +2276,12 @@ fn set_spell_level_required(item: &mut Value, levels: &HashMap<String, u32>) -> 
     true
 }
 
-fn spell_text_lookup_keys(spell: &Value) -> Vec<u32> {
-    let mut keys = Vec::with_capacity(2);
-    if let Some(index) = get_spell_index(spell) {
-        keys.push(index);
-    }
-    if let Some(id) = get_spell_id(spell) {
-        if !keys.contains(&id) {
-            keys.push(id);
-        }
-    }
-    keys
-}
-
 fn lookup_spell_text(table: &HashMap<u32, String>, spell: &Value) -> Option<String> {
-    spell_text_lookup_keys(spell)
-        .into_iter()
-        .find_map(|key| table.get(&key).cloned())
+    get_spell_index(spell).and_then(|index| table.get(&index).cloned())
 }
 
 fn resolve_spell_name(spell: &Value, spell_text: &SpellTextTables) -> Option<String> {
-    get_spell_name(spell)
-        .or_else(|| lookup_spell_text(&spell_text.spell_names_en, spell))
-        .or_else(|| {
-            get_spell_id(spell).and_then(|id| spell_text.ability_names_en.get(&id).cloned())
-        })
+    lookup_spell_text(&spell_text.spell_names_en, spell).or_else(|| get_spell_name(spell))
 }
 
 fn load_spell_text_tables(
@@ -2334,7 +2309,6 @@ fn load_spell_text_tables(
                 spell_names_jp,
                 spell_descriptions_en,
                 spell_descriptions_jp,
-                ability_names_en: HashMap::new(),
             };
         }
     }
@@ -2378,19 +2352,12 @@ fn load_spell_text_tables(
                 .map(|data| dmsg_first_string_map(&data.dat))
                 .unwrap_or_default();
 
-            let ability_names_en = dat_context
-                .get_data_from_dat(&Dat::<DmsgTable>::from(55701u32))
-                .ok()
-                .map(|data| dmsg_first_string_map(&data.dat))
-                .unwrap_or_default();
-
-            if !spell_names_en.is_empty() || !ability_names_en.is_empty() {
+            if !spell_names_en.is_empty() {
                 return SpellTextTables {
                     spell_names_en,
                     spell_names_jp,
                     spell_descriptions_en,
                     spell_descriptions_jp,
-                    ability_names_en,
                 };
             }
         }

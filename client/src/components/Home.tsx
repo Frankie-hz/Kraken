@@ -1,5 +1,3 @@
-import ProjectSelect from "./ProjectSelect";
-import FFXISelect from "./FFXISelect";
 import { commands } from "../bindings";
 import { useData } from "../store";
 import { unwrap } from "../util";
@@ -38,11 +36,83 @@ function Home() {
             </button>
           </div>
         </div>
-      </section>
 
-      <section class="dashboard-grid">
-        <FFXISelect />
-        <ProjectSelect />
+        <aside class="hero-panel__aside edit-workflow-card">
+          <div>
+            <div class="eyebrow">DAT translation</div>
+            <h2>Decode and Encode</h2>
+          </div>
+
+          <p class="muted-note">
+            Kraken translates between the binary DAT files the game uses and readable YAML files you can edit.
+          </p>
+
+          <div class="workflow-list">
+            <div class="workflow-item">
+              <span class="workflow-item__label">Decode</span>
+              <span>
+                Reads a DAT from the selected source and writes structured YAML. This is how the editor gets names,
+                flags, stats, spell data, and other fields into a readable form.
+              </span>
+            </div>
+            <div class="workflow-item">
+              <span class="workflow-item__label">Edit</span>
+              <span>
+                The edit tools change the YAML-backed values instead of asking you to work directly inside the raw DAT
+                bytes.
+              </span>
+            </div>
+            <div class="workflow-item">
+              <span class="workflow-item__label">Encode</span>
+              <span>
+                Saves rebuild the DAT from the current edited values, then write the matching DAT and YAML outputs into
+                your project.
+              </span>
+            </div>
+          </div>
+        </aside>
+
+        <aside class="hero-panel__aside edit-workflow-card">
+          <div>
+            <div class="eyebrow">Edit tool folders</div>
+            <h2>Retail Base and Custom</h2>
+          </div>
+
+          <p class="muted-note">
+            The edit tools use a simple two-folder version model so your retail FFXI install stays untouched.
+          </p>
+
+          <div class="workflow-list">
+            <div class="workflow-item">
+              <span class="workflow-item__label">Retail Base</span>
+              <span>
+                The base buttons copy clean DATs from your FFXI source folder into <code>Retail Base</code>. Normal saves
+                do not write here.
+              </span>
+            </div>
+            <div class="workflow-item">
+              <span class="workflow-item__label">Custom</span>
+              <span>
+                Editor saves write changed DATs and YAML into <code>Custom</code>, keeping your edited files separate from
+                the base copy.
+              </span>
+            </div>
+            <div class="workflow-item">
+              <span class="workflow-item__label">Loading</span>
+              <span>
+                Editors load the <code>Custom</code> version when it exists, otherwise they fall back to
+                <code> Retail Base</code>.
+              </span>
+            </div>
+            <div class="workflow-item">
+              <span class="workflow-item__label">Reset</span>
+              <span>
+                Reset to Retail Base replaces the current <code>Custom</code> DATs with the matching files from
+                <code> Retail Base</code>.
+              </span>
+            </div>
+          </div>
+        </aside>
       </section>
     </div>
   );

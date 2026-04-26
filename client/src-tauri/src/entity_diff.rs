@@ -181,6 +181,19 @@ pub struct EntityDiffSaveResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpellDiffSaveResult {
+    pub written_count: usize,
+    pub kept_old_count: usize,
+    pub kept_new_count: usize,
+    pub out_yaml_path: String,
+    pub out_dat_path: Option<String>,
+    pub spell_names_en_path: Option<String>,
+    pub spell_names_jp_path: Option<String>,
+    pub spell_descriptions_en_path: Option<String>,
+    pub spell_descriptions_jp_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FolderDiffEntry {
     pub relative_path: String,
     pub zone_name: Option<String>,
@@ -1136,7 +1149,7 @@ pub fn save_spell_diff_with_text_paths(
     out_yaml_path: PathBuf,
     out_dat_path: Option<PathBuf>,
     spell_text_paths: Option<SpellTextPaths>,
-) -> Result<EntityDiffSaveResult> {
+) -> Result<SpellDiffSaveResult> {
     let old_data = load_spell_table(&old_path)?;
     let mut new_data = load_spell_table(&new_path)?;
     let mut spell_names_en = spell_text_paths
@@ -1355,27 +1368,40 @@ pub fn save_spell_diff_with_text_paths(
         None
     };
 
+    let mut spell_names_en_path = None;
+    let mut spell_names_jp_path = None;
+    let mut spell_descriptions_en_path = None;
+    let mut spell_descriptions_jp_path = None;
+
     if let Some(paths) = spell_text_paths {
         if let Some(table) = spell_names_en {
             write_dmsg_table(&paths.spell_names_en, &table)?;
+            spell_names_en_path = Some(paths.spell_names_en.display().to_string());
         }
         if let Some(table) = spell_names_jp {
             write_dmsg_table(&paths.spell_names_jp, &table)?;
+            spell_names_jp_path = Some(paths.spell_names_jp.display().to_string());
         }
         if let Some(table) = spell_descriptions_en {
             write_dmsg_table(&paths.spell_descriptions_en, &table)?;
+            spell_descriptions_en_path = Some(paths.spell_descriptions_en.display().to_string());
         }
         if let Some(table) = spell_descriptions_jp {
             write_dmsg_table(&paths.spell_descriptions_jp, &table)?;
+            spell_descriptions_jp_path = Some(paths.spell_descriptions_jp.display().to_string());
         }
     }
 
-    Ok(EntityDiffSaveResult {
+    Ok(SpellDiffSaveResult {
         written_count: merged_count,
         kept_old_count,
         kept_new_count,
         out_yaml_path: out_yaml_path.display().to_string(),
         out_dat_path: written_dat,
+        spell_names_en_path,
+        spell_names_jp_path,
+        spell_descriptions_en_path,
+        spell_descriptions_jp_path,
     })
 }
 

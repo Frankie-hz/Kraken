@@ -5,7 +5,7 @@ import { commands, DatDescriptor, DatDescriptorInfo } from "../bindings";
 import { ItemEditorRow, ItemEditorSaveTarget, areAllItemDatsMadeInProject, copyItemDatsToProject, loadItemEditorData, saveItemEditorData } from "../custom_bindings";
 import { showConfirm, showMessage } from "../dialogs";
 import { useData } from "../store";
-import { unwrap } from "../util";
+import { projectDisplayPath, unwrap } from "../util";
 
 function arraysEqual(a: string[] | null | undefined, b: string[] | null | undefined) {
   const left = a ?? [];
@@ -1439,13 +1439,17 @@ function ItemEditorTool() {
     setSaving(true);
     try {
       const result = unwrap(await saveItemEditorData(descriptor, rows.map((row) => ({ ...row })), saveTarget));
+      const englishYamlPath = projectDisplayPath(result.english_out_yaml_path, getProjectFolder());
+      const englishDatPath = projectDisplayPath(result.english_out_dat_path, getProjectFolder());
+      const japaneseYamlPath = projectDisplayPath(result.japanese_out_yaml_path, getProjectFolder());
+      const japaneseDatPath = projectDisplayPath(result.japanese_out_dat_path, getProjectFolder());
       if (result.saved_english) {
-        setLastSavedYamlPath(result.english_out_yaml_path);
-        setLastSavedDatPath(result.english_out_dat_path ?? "");
+        setLastSavedYamlPath(englishYamlPath);
+        setLastSavedDatPath(englishDatPath);
       }
       if (result.saved_japanese) {
-        setLastSavedJapaneseYamlPath(result.japanese_out_yaml_path ?? "");
-        setLastSavedJapaneseDatPath(result.japanese_out_dat_path ?? "");
+        setLastSavedJapaneseYamlPath(japaneseYamlPath);
+        setLastSavedJapaneseDatPath(japaneseDatPath);
       }
       const saveLabel = result.saved_english && result.saved_japanese
         ? "EN + JP"
@@ -1454,7 +1458,7 @@ function ItemEditorTool() {
           : "JP";
       setLastNotice(`Saved ${result.written_count} item entries to ${saveLabel}.`);
       await showMessage(
-        `Saved ${result.written_count} item entries to ${saveLabel}.${result.saved_english ? `\nEN YAML: ${result.english_out_yaml_path}${result.english_out_dat_path ? `\nEN DAT: ${result.english_out_dat_path}` : ""}` : ""}${result.saved_japanese ? `${result.japanese_out_yaml_path ? `\nJP YAML: ${result.japanese_out_yaml_path}` : ""}${result.japanese_out_dat_path ? `\nJP DAT: ${result.japanese_out_dat_path}` : ""}` : ""}`,
+        `Saved ${result.written_count} item entries to ${saveLabel}.${result.saved_english ? `\nEN YAML: ${englishYamlPath}${englishDatPath ? `\nEN DAT: ${englishDatPath}` : ""}` : ""}${result.saved_japanese ? `${japaneseYamlPath ? `\nJP YAML: ${japaneseYamlPath}` : ""}${japaneseDatPath ? `\nJP DAT: ${japaneseDatPath}` : ""}` : ""}`,
         { title: "Saved", kind: "info" },
       );
     } catch (err) {

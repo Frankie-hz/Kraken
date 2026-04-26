@@ -22,3 +22,27 @@ export function unwrap<T, E>(result: Result<T, E>): T {
   }
   return result.data;
 }
+
+export function projectDisplayPath(path: string | null | undefined, projectRoot: string | null | undefined): string {
+  if (!path) {
+    return "";
+  }
+  if (!projectRoot) {
+    return path;
+  }
+
+  const normalizedPath = path.replaceAll("\\", "/").replace(/\/+$/, "");
+  const normalizedRoot = projectRoot.replaceAll("\\", "/").replace(/\/+$/, "");
+  const rootParts = normalizedRoot.split("/").filter((part) => part.length > 0);
+  const projectName = rootParts[rootParts.length - 1] ?? "";
+
+  if (normalizedPath === normalizedRoot) {
+    return projectName || path;
+  }
+  if (normalizedPath.toLowerCase().startsWith(`${normalizedRoot.toLowerCase()}/`)) {
+    const relativePath = normalizedPath.slice(normalizedRoot.length + 1);
+    return [projectName, relativePath].filter(Boolean).join("\\").replaceAll("/", "\\");
+  }
+
+  return path;
+}

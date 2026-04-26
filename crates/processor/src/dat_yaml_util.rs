@@ -1,16 +1,9 @@
-use anyhow::{anyhow, Result};
-use std::{
-    fs::{self, File},
-    io::BufWriter,
-    path::PathBuf,
-    sync::Arc,
-};
+use anyhow::{Result, anyhow};
+use std::{path::PathBuf, sync::Arc};
 
 use dats::{
-    base::Dat,
     base::ZoneId,
     context::DatContext,
-    formats::{dmsg_table::DmsgTable, menu_table::MenuTable},
     id_mapping::{DatDescriptor, DatLanguage, DatWithLang},
 };
 
@@ -263,10 +256,6 @@ impl DatYamlUtil {
                 let data_path = raw_data_root_path
                     .join(Self::get_relative_path(dat_descriptor, &dat_context)? + ".yml");
 
-                if matches!(dat_descriptor, DatDescriptor::DataMenu) {
-                    return Self::data_menu_to_yaml_with_names(dat_context, data_path);
-                }
-
                 dat_descriptor.use_dat_with(DatToYamlConverter {
                     dat_context,
                     raw_data_path: data_path,
@@ -282,36 +271,6 @@ impl DatYamlUtil {
                 })
             }
         }
-    }
-
-    fn data_menu_to_yaml_with_names(
-        dat_context: Arc<DatContext>,
-        raw_data_path: PathBuf,
-    ) -> Result<PathBuf> {
-        let mut data = dat_context.get_data_from_dat(&Dat::<MenuTable>::from(81u32))?;
-        let spell_names = dat_context
-            .get_data_from_dat(&Dat::<DmsgTable>::from(55702u32))
-            .ok();
-        let ability_names = dat_context
-            .get_data_from_dat(&Dat::<DmsgTable>::from(55701u32))
-            .ok();
-
-        data.dat.resolve_names(
-            spell_names.as_ref().map(|lookup| &lookup.dat),
-            ability_names.as_ref().map(|lookup| &lookup.dat),
-        );
-
-        fs::create_dir_all(raw_data_path.parent().unwrap())?;
-        let file = File::create(&raw_data_path).map_err(|err| {
-            anyhow!(
-                "Could not create at file {}: {}",
-                raw_data_path.display(),
-                err
-            )
-        })?;
-        serde_yaml::to_writer(BufWriter::new(file), &data.dat)?;
-
-        Ok(data.path)
     }
 
     pub fn yaml_to_dat(

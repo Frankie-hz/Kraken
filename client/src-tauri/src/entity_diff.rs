@@ -2307,7 +2307,7 @@ fn lookup_spell_text(table: &HashMap<u32, String>, spell: &Value) -> Option<Stri
 }
 
 fn resolve_spell_name(spell: &Value, spell_text: &SpellTextTables) -> Option<String> {
-    lookup_spell_text(&spell_text.spell_names_en, spell).or_else(|| get_spell_name(spell))
+    lookup_spell_text(&spell_text.spell_names_en, spell)
 }
 
 fn load_spell_text_tables(
@@ -2517,7 +2517,7 @@ fn align_operations(old: &[AlignEntry], new: &[AlignEntry]) -> Vec<AlignOp> {
 fn pair_score(old: &AlignEntry, new: &AlignEntry) -> i32 {
     let mut score = -4;
 
-    if old.name == new.name {
+    if !old.name.is_empty() && old.name == new.name {
         score += 7;
     }
 

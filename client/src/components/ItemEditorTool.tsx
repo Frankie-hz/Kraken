@@ -1543,6 +1543,29 @@ function ItemEditorTool() {
 
       <div class="mt-3 flex flex-col gap-2">
         <div class="rounded-md border border-slate-700/70 bg-slate-900/20 p-2 flex flex-col gap-2">
+          <div class="rounded-md border border-amber-700/60 bg-amber-950/15 px-3 py-2">
+            <div class="text-[13px] font-semibold uppercase tracking-[0.08em] text-amber-200">Direct Edit Workflow</div>
+            <div class="mt-1 text-[13px] text-amber-100">
+              This editor treats each item DAT as one paired dataset. Common item fields stay shared, while English
+              and Japanese text fields can be edited side by side and saved together.
+            </div>
+            <div class="mt-2 text-[13px] text-amber-200/90">
+              1. Click <span class="font-semibold">Make all Base DATs</span>. When all DATs are present it will say "All Dats Made".
+              <br />
+              2. Choose an item DAT set you want to edit, like <span class="font-semibold">Armor</span>.
+              <br />
+              3. Edit anything you want. It will save both EN and JP together when you click <span class="font-semibold">Save EN + JP</span>, or you can save just one side if you prefer.
+            </div>
+            <div class="mt-3">
+              <button
+                class={`${compactButtonClass()} ${allBaseDatsMade() ? "opacity-60 cursor-not-allowed" : ""}`}
+                disabled={isLoading() || isResolvingDat() || isMakingBaseDats() || !getProjectFolder() || !!allBaseDatsMade()}
+                onClick={makeAllBaseDats}
+              >
+                {isMakingBaseDats() ? "Making base DATs..." : allBaseDatsMade() ? "All Dats Made" : "Make all Base DATs"}
+              </button>
+            </div>
+          </div>
           <div class="rounded-md border border-slate-700 bg-slate-950/40 px-3 py-2">
             <div class="text-[12px] font-semibold uppercase tracking-[0.08em] text-slate-300">Item DATs</div>
             <div class="mt-1 text-[12px] text-slate-400">
@@ -1571,29 +1594,6 @@ function ItemEditorTool() {
             </Show>
           </div>
 
-          <div class="rounded-md border border-amber-700/60 bg-amber-950/15 px-3 py-2">
-            <div class="text-[13px] font-semibold uppercase tracking-[0.08em] text-amber-200">Direct Edit Workflow</div>
-            <div class="mt-1 text-[13px] text-amber-100">
-              This editor treats each item DAT as one paired dataset. Common item fields stay shared, while English
-              and Japanese text fields can be edited side by side and saved together.
-            </div>
-            <div class="mt-2 text-[13px] text-amber-200/90">
-              1. Click <span class="font-semibold">Make all Base DATs</span>. When all DATs are present it will say "All Dats Made".
-              <br />
-              2. Choose an item DAT set you want to edit, like <span class="font-semibold">Armor</span>.
-              <br />
-              3. Load it, edit EN and JP text together, then save both outputs at once.
-            </div>
-            <div class="mt-3">
-              <button
-                class={`${compactButtonClass()} ${allBaseDatsMade() ? "opacity-60 cursor-not-allowed" : ""}`}
-                disabled={isLoading() || isResolvingDat() || isMakingBaseDats() || !getProjectFolder() || !!allBaseDatsMade()}
-                onClick={makeAllBaseDats}
-              >
-                {isMakingBaseDats() ? "Making base DATs..." : allBaseDatsMade() ? "All Dats Made" : "Make all Base DATs"}
-              </button>
-            </div>
-          </div>
 
           <div class="min-w-0 flex flex-col gap-1 text-xs">
             <div class="flex items-center gap-2">

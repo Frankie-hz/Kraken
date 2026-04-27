@@ -30,7 +30,10 @@ import SpellDiffTool from "./components/SpellDiffTool";
 
 function formatDatDescriptorType(type: string) {
   if (type === "DataMenu") {
-    return "SpellData (DataMenu)";
+    return "Spell/Ability New Data";
+  }
+  if (type === "OldDataMenu") {
+    return "Spell/Ability Old Data";
   }
   return type;
 }

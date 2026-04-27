@@ -32,7 +32,7 @@ impl DatUsage<PathBuf> for DatToYamlConverter {
 
         serde_yaml::to_writer(BufWriter::new(file), &data.dat)?;
 
-        Ok(data.path)
+        Ok(self.raw_data_path)
     }
 }
 

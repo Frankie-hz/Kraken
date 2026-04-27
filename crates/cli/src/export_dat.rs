@@ -9,8 +9,8 @@ use dats::context::DatContext;
 use dats::dat_format::DatFormat;
 use dats::formats::{
     dialog::Dialog, dmsg_table::DmsgTable, entity_names::EntityNames, events::Events,
-    item_info::ItemInfoTable, menu_table::MenuTable, status_info::StatusInfoTable,
-    xistring_table::XiStringTable,
+    item_info::ItemInfoTable, menu_table::MenuTable, old_data_menu_table::OldDataMenuTable,
+    status_info::StatusInfoTable, xistring_table::XiStringTable,
 };
 
 pub fn export_dat(
@@ -19,6 +19,18 @@ pub fn export_dat(
     dat_id: Option<DatId>,
     out_path: Option<PathBuf>,
 ) -> Result<()> {
+    if ffxi_path.is_file() && dat_path.is_none() && dat_id.is_none() {
+        let out_path = out_path.unwrap_or_else(|| {
+            let mut path = ffxi_path.clone();
+            path.set_extension("yml");
+            path
+        });
+
+        println!("Writing exported DAT to: {}", out_path.display());
+        try_decode(&ffxi_path, out_path)?;
+        return Ok(());
+    }
+
     let (ffxi_path, sub_path) =
         if let Some((prefix, suffix)) = split_pathbuf_at_dir(&ffxi_path, "FINAL FANTASY XI") {
             (prefix, Some(suffix))
@@ -59,16 +71,12 @@ pub fn export_dat(
     });
 
     println!("Writing exported DAT to: {}", out_path.display());
-    try_decode(&dat_path, out_path, dat_context.as_ref())?;
+    try_decode(&dat_path, out_path)?;
 
     Ok(())
 }
 
-fn try_decode(
-    dat_path: &PathBuf,
-    out_path: PathBuf,
-    dat_context: &DatContext,
-) -> anyhow::Result<()> {
+fn try_decode(dat_path: &PathBuf, out_path: PathBuf) -> anyhow::Result<()> {
     if let Ok(data) = DmsgTable::from_path(dat_path) {
         let _ = std::fs::create_dir_all(&out_path.parent().unwrap());
         let file = std::fs::File::create(&out_path).unwrap();
@@ -98,6 +106,13 @@ fn try_decode(
     }
 
     if let Ok(data) = ItemInfoTable::from_path(dat_path) {
+        let _ = std::fs::create_dir_all(&out_path.parent().unwrap());
+        let file = std::fs::File::create(&out_path).unwrap();
+        serde_yaml::to_writer(BufWriter::new(file), &data)?;
+        return Ok(());
+    }
+
+    if let Ok(data) = OldDataMenuTable::from_path(dat_path) {
         let _ = std::fs::create_dir_all(&out_path.parent().unwrap());
         let file = std::fs::File::create(&out_path).unwrap();
         serde_yaml::to_writer(BufWriter::new(file), &data)?;

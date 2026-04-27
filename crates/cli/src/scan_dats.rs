@@ -7,8 +7,8 @@ use dats::context::DatContext;
 use dats::dat_format::DatFormat;
 use dats::formats::{
     dialog::Dialog, dmsg_table::DmsgTable, entity_names::EntityNames, events::Events,
-    item_info::ItemInfoTable, menu_table::MenuTable, status_info::StatusInfoTable,
-    xistring_table::XiStringTable,
+    item_info::ItemInfoTable, menu_table::MenuTable, old_data_menu_table::OldDataMenuTable,
+    status_info::StatusInfoTable, xistring_table::XiStringTable,
 };
 
 pub fn scan_dats(ffxi_path: PathBuf) -> Result<()> {
@@ -53,6 +53,7 @@ fn try_decode(ffxi_path: &PathBuf, dat_id: &DatId, dat_path: &DatPath) {
         EntityNames,
         Events,
         ItemInfoTable,
+        OldDataMenuTable,
         MenuTable,
         StatusInfoTable,
         XiStringTable,

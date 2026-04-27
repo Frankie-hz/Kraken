@@ -100,6 +100,7 @@ define_dat_files! {
     simple: {
         DataMenu => "data_menu",
         QuestsMissionsKeyItems => "quests_missions_keyitems",
+        OldDataMenu => "data_menu_old",
         MeritTable => "merit_table",
         MeritCategoryTable => "merit_category_table",
 

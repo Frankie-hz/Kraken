@@ -1,12 +1,12 @@
 use std::{
     collections::HashMap,
     ffi::OsStr,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, mpsc},
     thread,
 };
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use dats::{
     formats::zone_data::zone_model::ZoneMesh,
     {base::ZoneId, context::DatContext, id_mapping::DatWithLang},
@@ -92,6 +92,10 @@ impl AppStateData {
             None
         };
 
+        if let (Some(context), Some(project_path)) = (&context, &self.project_path) {
+            ensure_project_is_not_ffxi_folder(project_path, &context.ffxi_path)?;
+        }
+
         let new_ffxi_path = context.as_ref().map(|context| context.ffxi_path.clone());
 
         self.dat_context = context;
@@ -105,6 +109,10 @@ impl AppStateData {
         &mut self,
         project_path: Option<PathBuf>,
     ) -> Result<Vec<PathBuf>, AppError> {
+        if let (Some(project_path), Some(dat_context)) = (&project_path, &self.dat_context) {
+            ensure_project_is_not_ffxi_folder(project_path, &dat_context.ffxi_path)?;
+        }
+
         // Remove previous path from being watched
         if let Some(previous_path) = &self.project_path {
             let _ = self.watcher.unwatch(previous_path);
@@ -189,6 +197,27 @@ impl AppStateData {
 
         DatYamlUtil::dat_from_path(path, &raw_data_dir, &dat_context)
     }
+}
+
+fn canonical_or_original(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn ensure_project_is_not_ffxi_folder(
+    project_path: &Path,
+    ffxi_path: &Path,
+) -> Result<(), AppError> {
+    let project_path = canonical_or_original(project_path);
+    let ffxi_path = canonical_or_original(ffxi_path);
+
+    if project_path == ffxi_path || project_path.starts_with(&ffxi_path) {
+        return Err(anyhow!(
+            "Project folder cannot be the FFXI source folder or a folder inside it. Pick a separate workspace folder so Kraken never writes into the retail install."
+        )
+        .into());
+    }
+
+    Ok(())
 }
 
 pub type AppState<'a> = tauri::State<'a, RwLock<AppStateData>>;

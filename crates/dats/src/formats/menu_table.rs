@@ -212,39 +212,39 @@ pub struct AbilityInfo {
     tp_modifier: i8,
     tp_modifier_values: Vec<i16>,
     #[serde(default)]
-    unknown_0e: i8,
+    unknown_0e: u8,
     #[serde(default)]
     unknown_1c: i16,
     #[serde(default)]
     unknown_1e: i16,
     #[serde(default)]
-    unknown_20: i8,
+    unknown_20: u8,
     #[serde(default)]
-    unknown_21: i8,
+    unknown_21: u8,
     #[serde(default)]
     unknown_22: i16,
     #[serde(default)]
-    unknown_24: i8,
+    unknown_24: u8,
     #[serde(default)]
-    unknown_25: i8,
+    unknown_25: u8,
     #[serde(default)]
-    unknown_26: i8,
+    unknown_26: u8,
     #[serde(default)]
-    unknown_27: i8,
+    unknown_27: u8,
     #[serde(default)]
-    unknown_28: i8,
+    unknown_28: u8,
     #[serde(default)]
-    unknown_29: i8,
+    unknown_29: u8,
     #[serde(default)]
-    unknown_2a: i8,
+    unknown_2a: u8,
     #[serde(default)]
-    unknown_2b: i8,
+    unknown_2b: u8,
     #[serde(default)]
-    unknown_2c: i8,
+    unknown_2c: u8,
     #[serde(default)]
-    unknown_2d: i8,
+    unknown_2d: u8,
     #[serde(default)]
-    unknown_2e: i8,
+    unknown_2e: u8,
 }
 
 impl SectionInfo for AbilityInfo {
@@ -267,7 +267,7 @@ impl SectionInfo for AbilityInfo {
             recast_id: data_walker.step::<u16>()?,
             valid_targets: ValidTargets::from_bits(data_walker.step::<u16>()?).unwrap_or_default(),
             tp_cost: data_walker.step::<i16>()?,
-            unknown_0e: data_walker.step::<u8>()? as i8,
+            unknown_0e: data_walker.step::<u8>()?,
             level: data_walker.step::<u8>()? as i8,
             range: data_walker.step::<u8>()? as i8,
             radius: data_walker.step::<u8>()? as i8,
@@ -279,20 +279,20 @@ impl SectionInfo for AbilityInfo {
                 .collect::<Result<Vec<_>>>()?,
             unknown_1c: data_walker.step::<i16>()?,
             unknown_1e: data_walker.step::<i16>()?,
-            unknown_20: data_walker.step::<u8>()? as i8,
-            unknown_21: data_walker.step::<u8>()? as i8,
+            unknown_20: data_walker.step::<u8>()?,
+            unknown_21: data_walker.step::<u8>()?,
             unknown_22: data_walker.step::<i16>()?,
-            unknown_24: data_walker.step::<u8>()? as i8,
-            unknown_25: data_walker.step::<u8>()? as i8,
-            unknown_26: data_walker.step::<u8>()? as i8,
-            unknown_27: data_walker.step::<u8>()? as i8,
-            unknown_28: data_walker.step::<u8>()? as i8,
-            unknown_29: data_walker.step::<u8>()? as i8,
-            unknown_2a: data_walker.step::<u8>()? as i8,
-            unknown_2b: data_walker.step::<u8>()? as i8,
-            unknown_2c: data_walker.step::<u8>()? as i8,
-            unknown_2d: data_walker.step::<u8>()? as i8,
-            unknown_2e: data_walker.step::<u8>()? as i8,
+            unknown_24: data_walker.step::<u8>()?,
+            unknown_25: data_walker.step::<u8>()?,
+            unknown_26: data_walker.step::<u8>()?,
+            unknown_27: data_walker.step::<u8>()?,
+            unknown_28: data_walker.step::<u8>()?,
+            unknown_29: data_walker.step::<u8>()?,
+            unknown_2a: data_walker.step::<u8>()?,
+            unknown_2b: data_walker.step::<u8>()?,
+            unknown_2c: data_walker.step::<u8>()?,
+            unknown_2d: data_walker.step::<u8>()?,
+            unknown_2e: data_walker.step::<u8>()?,
         };
 
         data_walker.expect_msg::<u8>(0xFF, "End of ability marker")?;
@@ -311,7 +311,7 @@ impl SectionInfo for AbilityInfo {
         data_walker.write(self.recast_id);
         data_walker.write(self.valid_targets.bits());
         data_walker.write(self.tp_cost);
-        data_walker.write(self.unknown_0e as u8);
+        data_walker.write(self.unknown_0e);
         data_walker.write(self.level as u8);
         data_walker.write(self.range as u8);
         data_walker.write(self.radius as u8);
@@ -329,20 +329,20 @@ impl SectionInfo for AbilityInfo {
         }
         data_walker.write(self.unknown_1c);
         data_walker.write(self.unknown_1e);
-        data_walker.write(self.unknown_20 as u8);
-        data_walker.write(self.unknown_21 as u8);
+        data_walker.write(self.unknown_20);
+        data_walker.write(self.unknown_21);
         data_walker.write(self.unknown_22);
-        data_walker.write(self.unknown_24 as u8);
-        data_walker.write(self.unknown_25 as u8);
-        data_walker.write(self.unknown_26 as u8);
-        data_walker.write(self.unknown_27 as u8);
-        data_walker.write(self.unknown_28 as u8);
-        data_walker.write(self.unknown_29 as u8);
-        data_walker.write(self.unknown_2a as u8);
-        data_walker.write(self.unknown_2b as u8);
-        data_walker.write(self.unknown_2c as u8);
-        data_walker.write(self.unknown_2d as u8);
-        data_walker.write(self.unknown_2e as u8);
+        data_walker.write(self.unknown_24);
+        data_walker.write(self.unknown_25);
+        data_walker.write(self.unknown_26);
+        data_walker.write(self.unknown_27);
+        data_walker.write(self.unknown_28);
+        data_walker.write(self.unknown_29);
+        data_walker.write(self.unknown_2a);
+        data_walker.write(self.unknown_2b);
+        data_walker.write(self.unknown_2c);
+        data_walker.write(self.unknown_2d);
+        data_walker.write(self.unknown_2e);
 
         data_walker.write::<u8>(0xFF);
 

@@ -7,6 +7,7 @@ pub mod item_info;
 pub mod menu_table;
 pub mod merit_category_table;
 pub mod merit_table;
+pub mod old_data_menu_table;
 pub mod status_info;
 pub mod string_table;
 pub mod xistring_table;

@@ -211,9 +211,40 @@ pub struct AbilityInfo {
     valid_target_type: CommValidTargetType,
     tp_modifier: i8,
     tp_modifier_values: Vec<i16>,
-
-    #[serde(with = "serde_hex")]
-    unknowns: Vec<u8>,
+    #[serde(default)]
+    unknown_0e: i8,
+    #[serde(default)]
+    unknown_1c: i16,
+    #[serde(default)]
+    unknown_1e: i16,
+    #[serde(default)]
+    unknown_20: i8,
+    #[serde(default)]
+    unknown_21: i8,
+    #[serde(default)]
+    unknown_22: i16,
+    #[serde(default)]
+    unknown_24: i8,
+    #[serde(default)]
+    unknown_25: i8,
+    #[serde(default)]
+    unknown_26: i8,
+    #[serde(default)]
+    unknown_27: i8,
+    #[serde(default)]
+    unknown_28: i8,
+    #[serde(default)]
+    unknown_29: i8,
+    #[serde(default)]
+    unknown_2a: i8,
+    #[serde(default)]
+    unknown_2b: i8,
+    #[serde(default)]
+    unknown_2c: i8,
+    #[serde(default)]
+    unknown_2d: i8,
+    #[serde(default)]
+    unknown_2e: i8,
 }
 
 impl SectionInfo for AbilityInfo {
@@ -236,7 +267,7 @@ impl SectionInfo for AbilityInfo {
             recast_id: data_walker.step::<u16>()?,
             valid_targets: ValidTargets::from_bits(data_walker.step::<u16>()?).unwrap_or_default(),
             tp_cost: data_walker.step::<i16>()?,
-            unknowns: data_walker.take_bytes(1)?.to_vec(),
+            unknown_0e: data_walker.step::<u8>()? as i8,
             level: data_walker.step::<u8>()? as i8,
             range: data_walker.step::<u8>()? as i8,
             radius: data_walker.step::<u8>()? as i8,
@@ -246,10 +277,23 @@ impl SectionInfo for AbilityInfo {
             tp_modifier_values: (0..3)
                 .map(|_| data_walker.step::<i16>())
                 .collect::<Result<Vec<_>>>()?,
+            unknown_1c: data_walker.step::<i16>()?,
+            unknown_1e: data_walker.step::<i16>()?,
+            unknown_20: data_walker.step::<u8>()? as i8,
+            unknown_21: data_walker.step::<u8>()? as i8,
+            unknown_22: data_walker.step::<i16>()?,
+            unknown_24: data_walker.step::<u8>()? as i8,
+            unknown_25: data_walker.step::<u8>()? as i8,
+            unknown_26: data_walker.step::<u8>()? as i8,
+            unknown_27: data_walker.step::<u8>()? as i8,
+            unknown_28: data_walker.step::<u8>()? as i8,
+            unknown_29: data_walker.step::<u8>()? as i8,
+            unknown_2a: data_walker.step::<u8>()? as i8,
+            unknown_2b: data_walker.step::<u8>()? as i8,
+            unknown_2c: data_walker.step::<u8>()? as i8,
+            unknown_2d: data_walker.step::<u8>()? as i8,
+            unknown_2e: data_walker.step::<u8>()? as i8,
         };
-        let mut info = info;
-        info.unknowns
-            .extend_from_slice(data_walker.take_bytes(data_walker.remaining() - 1)?);
 
         data_walker.expect_msg::<u8>(0xFF, "End of ability marker")?;
 
@@ -267,14 +311,7 @@ impl SectionInfo for AbilityInfo {
         data_walker.write(self.recast_id);
         data_walker.write(self.valid_targets.bits());
         data_walker.write(self.tp_cost);
-        if self.unknowns.len() != 20 {
-            return Err(anyhow!(
-                "AbilityInfo unknowns must be 20 bytes, found {}",
-                self.unknowns.len()
-            ));
-        }
-
-        data_walker.write(self.unknowns[0]);
+        data_walker.write(self.unknown_0e as u8);
         data_walker.write(self.level as u8);
         data_walker.write(self.range as u8);
         data_walker.write(self.radius as u8);
@@ -290,7 +327,22 @@ impl SectionInfo for AbilityInfo {
         for tp_modifier_value in &self.tp_modifier_values {
             data_walker.write(*tp_modifier_value);
         }
-        data_walker.write_bytes(&self.unknowns[1..]);
+        data_walker.write(self.unknown_1c);
+        data_walker.write(self.unknown_1e);
+        data_walker.write(self.unknown_20 as u8);
+        data_walker.write(self.unknown_21 as u8);
+        data_walker.write(self.unknown_22);
+        data_walker.write(self.unknown_24 as u8);
+        data_walker.write(self.unknown_25 as u8);
+        data_walker.write(self.unknown_26 as u8);
+        data_walker.write(self.unknown_27 as u8);
+        data_walker.write(self.unknown_28 as u8);
+        data_walker.write(self.unknown_29 as u8);
+        data_walker.write(self.unknown_2a as u8);
+        data_walker.write(self.unknown_2b as u8);
+        data_walker.write(self.unknown_2c as u8);
+        data_walker.write(self.unknown_2d as u8);
+        data_walker.write(self.unknown_2e as u8);
 
         data_walker.write::<u8>(0xFF);
 
@@ -883,7 +935,23 @@ mod tests {
         assert_eq!(ability.valid_target_type, CommValidTargetType::MobAoe);
         assert_eq!(ability.tp_modifier, 0);
         assert_eq!(ability.tp_modifier_values, vec![0, 48, 96]);
-        assert_eq!(ability.unknowns.len(), 20);
+        assert_eq!(ability.unknown_0e, 0);
+        assert_eq!(ability.unknown_1c, 0);
+        assert_eq!(ability.unknown_1e, 0);
+        assert_eq!(ability.unknown_20, 0);
+        assert_eq!(ability.unknown_21, 0);
+        assert_eq!(ability.unknown_22, 0);
+        assert_eq!(ability.unknown_24, 0);
+        assert_eq!(ability.unknown_25, 0);
+        assert_eq!(ability.unknown_26, 0);
+        assert_eq!(ability.unknown_27, 0);
+        assert_eq!(ability.unknown_28, 0);
+        assert_eq!(ability.unknown_29, 0);
+        assert_eq!(ability.unknown_2a, 0);
+        assert_eq!(ability.unknown_2b, 0);
+        assert_eq!(ability.unknown_2c, 0);
+        assert_eq!(ability.unknown_2d, 0);
+        assert_eq!(ability.unknown_2e, 0);
 
         let ability_yaml = serde_yaml::to_string(ability).unwrap();
         assert!(!ability_yaml.contains("name:"));
@@ -897,9 +965,14 @@ mod tests {
         assert!(ability_yaml.contains("valid_target_type: MobAoe"));
         assert!(ability_yaml.contains("tp_modifier: 0"));
         assert!(ability_yaml.contains("tp_modifier_values:"));
+        assert!(ability_yaml.contains("unknown_0e: 0"));
+        assert!(ability_yaml.contains("unknown_1c: 0"));
+        assert!(ability_yaml.contains("unknown_26: 0"));
+        assert!(ability_yaml.contains("unknown_2e: 0"));
         assert!(!ability_yaml.contains("mp_cost:"));
         assert!(!ability_yaml.contains("unknown1:"));
         assert!(!ability_yaml.contains("shared_timer_id:"));
+        assert!(!ability_yaml.contains("unknowns:"));
 
         assert_eq!(res.to_bytes().unwrap(), fs::read(&dat_path).unwrap());
     }

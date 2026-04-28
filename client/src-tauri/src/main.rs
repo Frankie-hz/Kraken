@@ -83,6 +83,9 @@ fn main() {
             commands::copy_spell_dat_to_project,
             commands::reset_spell_dat_to_retail_base,
             commands::is_spell_dat_made_in_project,
+            commands::copy_ability_dat_to_project,
+            commands::reset_ability_dat_to_retail_base,
+            commands::is_ability_dat_made_in_project,
             commands::load_item_editor_data,
             commands::browse_dats,
             commands::get_zones_for_type,
@@ -104,10 +107,12 @@ fn main() {
             commands::compare_entity_name_files,
             commands::compare_item_files,
             commands::compare_spell_files,
+            commands::compare_ability_files,
             commands::save_entity_name_diff,
             commands::save_item_diff,
             commands::save_item_editor_data,
             commands::save_spell_diff,
+            commands::save_ability_diff,
             commands::compare_entity_name_folders,
         ])
         .setup(|app| {

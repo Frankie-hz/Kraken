@@ -69,6 +69,33 @@ export async function isSpellDatMadeInProject(): Promise<Result<boolean, any>> {
     }
 }
 
+export async function copyAbilityDatToProject(): Promise<Result<string, any>> {
+    try {
+        return { status: "ok", data: await TAURI_INVOKE("copy_ability_dat_to_project") };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        else return { status: "error", error: e as any };
+    }
+}
+
+export async function resetAbilityDatToRetailBase(): Promise<Result<string, any>> {
+    try {
+        return { status: "ok", data: await TAURI_INVOKE("reset_ability_dat_to_retail_base") };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        else return { status: "error", error: e as any };
+    }
+}
+
+export async function isAbilityDatMadeInProject(): Promise<Result<boolean, any>> {
+    try {
+        return { status: "ok", data: await TAURI_INVOKE("is_ability_dat_made_in_project") };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        else return { status: "error", error: e as any };
+    }
+}
+
 export async function resolveDatDescriptorPath(
     descriptor: DatDescriptor,
     lang?: DatLanguage,
@@ -250,6 +277,53 @@ export interface SpellDiffResult {
     changed_count: number;
 }
 
+export interface AbilityDiffSaveResult {
+    written_count: number;
+    kept_old_count: number;
+    kept_new_count: number;
+    out_yaml_path: string;
+    out_dat_path: string | null;
+    ability_names_en_path: string | null;
+    ability_names_jp_path: string | null;
+    ability_descriptions_en_path: string | null;
+    ability_descriptions_jp_path: string | null;
+}
+
+export interface AbilityDiffRow {
+    row: number;
+    old_id: number | null;
+    old_name: string | null;
+    old_name_jp: string | null;
+    old_description_en: string | null;
+    old_description_jp: string | null;
+    old_valid_targets: string[] | null;
+    old_charges_required: number | null;
+    old_range: number | null;
+    old_radius: number | null;
+    old_aoe_type: string | null;
+    old_valid_target_type: string | null;
+    new_id: number | null;
+    new_name: string | null;
+    new_name_jp: string | null;
+    new_description_en: string | null;
+    new_description_jp: string | null;
+    new_valid_targets: string[] | null;
+    new_charges_required: number | null;
+    new_range: number | null;
+    new_radius: number | null;
+    new_aoe_type: string | null;
+    new_valid_target_type: string | null;
+    target_id: number | null;
+    choice: EntityDiffChoice;
+}
+
+export interface AbilityDiffResult {
+    rows: AbilityDiffRow[];
+    old_count: number;
+    new_count: number;
+    changed_count: number;
+}
+
 export interface FolderDiffEntry {
     relative_path: string;
     zone_name: string | null;
@@ -300,6 +374,15 @@ export async function compareItemFiles(oldPath: string, newPath: string): Promis
 export async function compareSpellFiles(oldPath: string, newPath: string): Promise<Result<SpellDiffResult, any>> {
     try {
         return { status: "ok", data: await TAURI_INVOKE("compare_spell_files", { oldPath, newPath }) };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        else return { status: "error", error: e as any };
+    }
+}
+
+export async function compareAbilityFiles(oldPath: string, newPath: string): Promise<Result<AbilityDiffResult, any>> {
+    try {
+        return { status: "ok", data: await TAURI_INVOKE("compare_ability_files", { oldPath, newPath }) };
     } catch (e) {
         if (e instanceof Error) throw e;
         else return { status: "error", error: e as any };
@@ -364,6 +447,24 @@ export async function saveSpellDiff(
         return {
             status: "ok",
             data: await TAURI_INVOKE("save_spell_diff", { oldPath, newPath, rows, outYamlPath, outDatPath }),
+        };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        else return { status: "error", error: e as any };
+    }
+}
+
+export async function saveAbilityDiff(
+    oldPath: string,
+    newPath: string,
+    rows: AbilityDiffRow[],
+    outYamlPath: string,
+    outDatPath: string | null,
+): Promise<Result<AbilityDiffSaveResult, any>> {
+    try {
+        return {
+            status: "ok",
+            data: await TAURI_INVOKE("save_ability_diff", { oldPath, newPath, rows, outYamlPath, outDatPath }),
         };
     } catch (e) {
         if (e instanceof Error) throw e;

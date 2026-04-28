@@ -174,6 +174,29 @@ pub enum AbilityType {
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, FromPrimitive, IntoPrimitive,
 )]
+#[repr(i8)]
+pub enum ModifierType {
+    RadiusOrNone = 0,
+    Damage = 1,
+    Accuracy = 2,
+    Attack = 4,
+    IgnoreDefense = 5,
+    Crit = 6,
+    Misc = 7,
+    AddEffect = 8,
+    Duration = 9,
+    Aftermath = 10,
+    Regen = 13,
+    Enmity = 18,
+
+    #[num_enum(catch_all)]
+    #[serde(untagged)]
+    Unknown(i8),
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, FromPrimitive, IntoPrimitive,
+)]
 #[repr(u16)]
 pub enum MagicType {
     None = 0,

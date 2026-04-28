@@ -124,7 +124,7 @@ function getOutputRoot(projectRoot: string | null): string | null {
     return null;
   }
 
-  return projectRoot.replaceAll("\\", "/").replace(/\/+$/, "");
+  return `${projectRoot.replaceAll("\\", "/").replace(/\/+$/, "")}/Custom`;
 }
 
 function buildAutoSavePaths(
@@ -1121,7 +1121,7 @@ function ItemDiffTool() {
                 class={`${compactButtonClass()} whitespace-nowrap`}
                 onClick={() => pickFile(
                   setEditedFile,
-                  pickerDefaultPath(editedPath(), getProjectFolder()),
+                  pickerDefaultPath(editedPath(), getOutputRoot(getProjectFolder())),
                 )}
               >
                 Current DAT/YAML

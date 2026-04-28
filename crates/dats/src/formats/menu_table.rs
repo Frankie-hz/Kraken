@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use crate::{
     enums::{
         AreaShapeType, CommValidTargetType, Element, JobEnum, MagicType, MagicValidTargetType,
-        SkillType, SpellDistance,
+        ModifierType, SkillType, SpellDistance,
     },
     serde_base64, serde_hex, serde_hex_num,
     utils::{
@@ -210,7 +210,7 @@ pub struct AbilityInfo {
     aoe_range: SpellDistance,
     area_shape: AreaShapeType,
     valid_target_type: CommValidTargetType,
-    tp_modifier: i8,
+    tp_modifier: ModifierType,
     tp_modifier_values: Vec<i16>,
     #[serde(default)]
     unknown_0e: u8,
@@ -274,7 +274,7 @@ impl SectionInfo for AbilityInfo {
             aoe_range: SpellDistance::from(data_walker.step::<u8>()?),
             area_shape: AreaShapeType::from(data_walker.step::<u8>()?),
             valid_target_type: CommValidTargetType::from(data_walker.step::<u16>()?),
-            tp_modifier: data_walker.step::<u8>()? as i8,
+            tp_modifier: ModifierType::from(data_walker.step::<u8>()? as i8),
             tp_modifier_values: (0..3)
                 .map(|_| data_walker.step::<i16>())
                 .collect::<Result<Vec<_>>>()?,
@@ -318,7 +318,7 @@ impl SectionInfo for AbilityInfo {
         data_walker.write::<u8>(self.aoe_range.into());
         data_walker.write::<u8>(self.area_shape.into());
         data_walker.write::<u16>(self.valid_target_type.into());
-        data_walker.write(self.tp_modifier as u8);
+        data_walker.write::<u8>(i8::from(self.tp_modifier) as u8);
         if self.tp_modifier_values.len() != 3 {
             return Err(anyhow!(
                 "AbilityInfo tp_modifier_values must contain 3 values, found {}",
@@ -831,7 +831,7 @@ mod tests {
         dat_format::DatFormat,
         enums::{
             AbilityType, AreaShapeType, CommValidTargetType, Element, JobEnum, MagicType,
-            MagicValidTargetType, SkillType, SpellDistance,
+            MagicValidTargetType, ModifierType, SkillType, SpellDistance,
         },
         flags::{JobFlag, MagicModifier, ValidTargets},
         formats::menu_table::Section,
@@ -934,7 +934,7 @@ mod tests {
         assert_eq!(ability.aoe_range, SpellDistance::D4);
         assert_eq!(ability.area_shape, AreaShapeType::Sphere);
         assert_eq!(ability.valid_target_type, CommValidTargetType::MobAoe);
-        assert_eq!(ability.tp_modifier, 0);
+        assert_eq!(ability.tp_modifier, ModifierType::RadiusOrNone);
         assert_eq!(ability.tp_modifier_values, vec![0, 48, 96]);
         assert_eq!(ability.unknown_0e, 0);
         assert_eq!(ability.unknown_1c, 0);
@@ -964,7 +964,7 @@ mod tests {
         assert!(ability_yaml.contains("aoe_range: D4"));
         assert!(ability_yaml.contains("area_shape: Sphere"));
         assert!(ability_yaml.contains("valid_target_type: MobAoe"));
-        assert!(ability_yaml.contains("tp_modifier: 0"));
+        assert!(ability_yaml.contains("tp_modifier: RadiusOrNone"));
         assert!(ability_yaml.contains("tp_modifier_values:"));
         assert!(ability_yaml.contains("unknown_0e: 0"));
         assert!(ability_yaml.contains("unknown_1c: 0"));

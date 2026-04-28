@@ -30,7 +30,7 @@ function Statusbar() {
           >
             {getProjectFolder() ?? "No project folder selected. Click to choose one."}
           </div>
-          <div class="statusbar-note">Editors save YAML to Project/Yaml/ROM... and DATs to Project/ROM...</div>
+          <div class="statusbar-note">Editors save YAML to Project/Custom/Yaml/ROM... and DATs to Project/Custom/ROM...</div>
         </div>
 
         <div class="statusbar-item">

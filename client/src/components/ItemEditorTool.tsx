@@ -1662,6 +1662,8 @@ function ItemEditorTool() {
             <Show when={rows.length > 0}>
               <input
                 class="m-0 min-w-[12rem] flex-1 md:flex-none md:w-64 py-0.5 px-2 text-sm rounded-md border border-slate-500 bg-slate-800 text-slate-100 focus:border-slate-300 focus:outline-none"
+                name="item-editor-search"
+                autocomplete="off"
                 placeholder="Search rows..."
                 value={tableFilter()}
                 onInput={(e) => setTableFilter(e.currentTarget.value)}
@@ -1876,6 +1878,8 @@ function ItemEditorTool() {
                               <input
                                 class={`m-0 w-full py-0 px-2 text-sm rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_en_name !== row.new_en_name)}`}
                                 type="text"
+                                name={`item-en-name-${rowId}`}
+                                autocomplete="off"
                                 value={row.new_en_name ?? ""}
                                 title={displayItemName(row.new_en_name ?? row.old_en_name)}
                                 onInput={(e) => setRowNewEnglishName(rowId, e.currentTarget.value)}
@@ -1887,6 +1891,8 @@ function ItemEditorTool() {
                                   <input
                                     class={`m-0 w-full py-0 px-2 text-sm rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_jp_name ?? null) !== (row.new_jp_name ?? null))}`}
                                     type="text"
+                                    name={`item-jp-name-${rowId}`}
+                                    autocomplete="off"
                                     value={row.new_jp_name ?? ""}
                                     title={displayItemName(row.new_jp_name ?? row.old_jp_name)}
                                     onInput={(e) => setRowNewJapaneseName(rowId, e.currentTarget.value)}
@@ -1900,6 +1906,8 @@ function ItemEditorTool() {
                               <input
                                 class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_id !== row.new_id)}`}
                                 type="number"
+                                name={`item-id-${rowId}`}
+                                autocomplete="off"
                                 min={0}
                                 step={1}
                                 value={row.new_id ?? ""}
@@ -1910,6 +1918,8 @@ function ItemEditorTool() {
                               <input
                                 class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_stack_size !== row.new_stack_size)}`}
                                 type="number"
+                                name={`item-stack-${rowId}`}
+                                autocomplete="off"
                                 min={0}
                                 step={1}
                                 value={row.new_stack_size ?? ""}
@@ -1918,6 +1928,8 @@ function ItemEditorTool() {
                             <div class="text-slate-300">Item Type:</div>
                               <select
                                 class={`m-0 w-full py-0 px-2 text-sm rounded-md border border-slate-500 bg-slate-800 text-slate-100 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_item_type ?? null) !== (row.new_item_type ?? null))}`}
+                                name={`item-type-${rowId}`}
+                                autocomplete="off"
                                 value={row.new_item_type ?? "None"}
                                 onChange={(e) => setRowNewItemType(rowId, e.currentTarget.value)}
                               >
@@ -1929,6 +1941,8 @@ function ItemEditorTool() {
                               <div class="text-slate-300">Valid Targets:</div>
                               <select
                                 class={`m-0 w-full py-0 px-2 text-sm rounded-md border border-slate-500 bg-slate-800 text-slate-100 focus:border-slate-300 focus:outline-none ${newFieldClass(!arraysEqual(row.old_valid_targets, row.new_valid_targets))}`}
+                                name={`item-valid-targets-${rowId}`}
+                                autocomplete="off"
                                 value={validTargetPresetKey(row.new_valid_targets ?? row.old_valid_targets)}
                                 onChange={(e) => {
                                   const selectedPreset = validTargetPresetOptions.find((preset) => validTargetPresetKey(preset.values) === e.currentTarget.value);
@@ -1943,6 +1957,8 @@ function ItemEditorTool() {
                               <div class="text-slate-300">Slots:</div>
                               <select
                                 class={`m-0 w-full py-0 px-2 text-sm rounded-md border border-slate-500 bg-slate-800 text-slate-100 focus:border-slate-300 focus:outline-none ${newFieldClass(!arraysEqual(row.old_slots, row.new_slots))}`}
+                                name={`item-slots-${rowId}`}
+                                autocomplete="off"
                                 value={slotPresetKey(row.new_slots ?? row.old_slots)}
                                 onChange={(e) => {
                                   const selectedPreset = slotPresetOptions.find((preset) => slotPresetKey(preset.values) === e.currentTarget.value);
@@ -1961,6 +1977,8 @@ function ItemEditorTool() {
                               <input
                                 class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_level !== row.new_level)}`}
                                 type="number"
+                                name={`item-level-${rowId}`}
+                                autocomplete="off"
                                 min={0}
                                 step={1}
                                 value={row.new_level ?? ""}
@@ -1971,6 +1989,8 @@ function ItemEditorTool() {
                               <input
                                 class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_shield_size !== row.new_shield_size)}`}
                                 type="number"
+                                name={`item-shield-size-${rowId}`}
+                                autocomplete="off"
                                 min={0}
                                 step={1}
                                 value={row.new_shield_size ?? ""}
@@ -1981,6 +2001,8 @@ function ItemEditorTool() {
                               <input
                                 class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_max_charges !== row.new_max_charges)}`}
                                 type="number"
+                                name={`item-max-charges-${rowId}`}
+                                autocomplete="off"
                                 min={0}
                                 step={1}
                                 value={row.new_max_charges ?? ""}
@@ -1991,6 +2013,8 @@ function ItemEditorTool() {
                               <input
                                 class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_casting_time !== row.new_casting_time)}`}
                                 type="number"
+                                name={`item-casting-time-${rowId}`}
+                                autocomplete="off"
                                 min={0}
                                 step={1}
                                 value={row.new_casting_time ?? ""}
@@ -2001,6 +2025,8 @@ function ItemEditorTool() {
                               <input
                                 class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_use_delay !== row.new_use_delay)}`}
                                 type="number"
+                                name={`item-use-delay-${rowId}`}
+                                autocomplete="off"
                                 min={0}
                                 step={1}
                                 value={row.new_use_delay ?? ""}
@@ -2011,6 +2037,8 @@ function ItemEditorTool() {
                               <input
                                 class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_reuse_delay !== row.new_reuse_delay)}`}
                                 type="number"
+                                name={`item-reuse-delay-${rowId}`}
+                                autocomplete="off"
                                 min={0}
                                 step={1}
                                 value={row.new_reuse_delay ?? ""}
@@ -2025,6 +2053,8 @@ function ItemEditorTool() {
                                   <input
                                     class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_weapon_damage !== row.new_weapon_damage)}`}
                                     type="number"
+                                    name={`item-weapon-damage-${rowId}`}
+                                    autocomplete="off"
                                     min={0}
                                     step={1}
                                     value={row.new_weapon_damage ?? ""}
@@ -2035,6 +2065,8 @@ function ItemEditorTool() {
                                   <input
                                     class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_weapon_delay !== row.new_weapon_delay)}`}
                                     type="number"
+                                    name={`item-weapon-delay-${rowId}`}
+                                    autocomplete="off"
                                     min={0}
                                     step={1}
                                     value={row.new_weapon_delay ?? ""}
@@ -2045,6 +2077,8 @@ function ItemEditorTool() {
                                   <input
                                     class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-600 bg-slate-900 text-slate-200 focus:outline-none ${newFieldClass(row.old_weapon_dps !== row.new_weapon_dps)}`}
                                     type="number"
+                                    name={`item-weapon-dps-${rowId}`}
+                                    autocomplete="off"
                                     value={row.new_weapon_dps ?? ""}
                                     readOnly
                                   />
@@ -2054,6 +2088,8 @@ function ItemEditorTool() {
                                   <div class="text-slate-300">Skill Type:</div>
                                   <select
                                     class={`m-0 w-full py-0 px-2 text-sm rounded-md border border-slate-500 bg-slate-800 text-slate-100 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_weapon_skill_type ?? null) !== (row.new_weapon_skill_type ?? null))}`}
+                                    name={`item-weapon-skill-type-${rowId}`}
+                                    autocomplete="off"
                                     value={row.new_weapon_skill_type ?? "None"}
                                     onChange={(e) => setRowNewWeaponSkillType(rowId, e.currentTarget.value)}
                                   >
@@ -2066,6 +2102,8 @@ function ItemEditorTool() {
                                   <input
                                     class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_weapon_jug_size !== row.new_weapon_jug_size)}`}
                                     type="number"
+                                    name={`item-weapon-jug-size-${rowId}`}
+                                    autocomplete="off"
                                     min={0}
                                     step={1}
                                     value={row.new_weapon_jug_size ?? ""}
@@ -2076,6 +2114,8 @@ function ItemEditorTool() {
                                   <input
                                     class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_weapon_emote !== row.new_weapon_emote)}`}
                                     type="number"
+                                    name={`item-weapon-emote-${rowId}`}
+                                    autocomplete="off"
                                     min={0}
                                     step={1}
                                     value={row.new_weapon_emote ?? ""}
@@ -2139,6 +2179,8 @@ function ItemEditorTool() {
                             <div class="mb-1 text-sm font-semibold text-slate-200">Icon Bytes</div>
                             <textarea
                               class={`m-0 min-h-28 w-full resize-y rounded-md border bg-slate-800 px-2 py-1 font-mono text-[11px] leading-4 text-slate-100 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_icon_bytes ?? null) !== (row.new_icon_bytes ?? null))}`}
+                              name={`item-icon-bytes-${rowId}`}
+                              autocomplete="off"
                               spellcheck={false}
                               value={row.new_icon_bytes ?? ""}
                               onInput={(e) => setRowNewIconBytes(rowId, e.currentTarget.value)}
@@ -2168,6 +2210,8 @@ function ItemEditorTool() {
                                       <label class="grid min-w-0 grid-cols-[1rem,minmax(0,1fr)] items-start gap-x-2 text-xs leading-5">
                                         <input
                                           type="checkbox"
+                                          name={`item-flag-${rowId}-${flag}`}
+                                          autocomplete="off"
                                           class="mt-1"
                                           checked={targetFlags().includes(flag)}
                                           onChange={(e) => toggleRowNewFlag(rowId, flag, e.currentTarget.checked)}
@@ -2203,6 +2247,8 @@ function ItemEditorTool() {
                                         <label class="grid min-w-0 grid-cols-[1rem,minmax(0,1fr)] items-start gap-x-2 text-xs leading-5">
                                           <input
                                             type="checkbox"
+                                            name={`item-job-${rowId}-${job}`}
+                                            autocomplete="off"
                                             class="mt-1"
                                             checked={targetJobs().includes(job)}
                                             onChange={(e) => toggleRowNewJob(rowId, job, e.currentTarget.checked)}
@@ -2236,6 +2282,8 @@ function ItemEditorTool() {
                                 <div class="mb-2 text-[11px] text-slate-400">Original English description remains available while you edit.</div>
                                 <textarea
                                   class={`m-0 min-h-40 w-full resize-y px-2 py-1 text-sm rounded-md border bg-slate-800 text-slate-100 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_en_description ?? null) !== (row.new_en_description ?? null))}`}
+                                  name={`item-en-description-${rowId}`}
+                                  autocomplete="off"
                                   rows={5}
                                   value={row.new_en_description ?? ""}
                                   onInput={(e) => setRowNewEnglishDescription(rowId, e.currentTarget.value)}
@@ -2263,6 +2311,8 @@ function ItemEditorTool() {
                                   <div class="mb-2 text-[11px] text-slate-400">Edit the Japanese item name and description here.</div>
                                   <textarea
                                     class={`m-0 min-h-40 w-full resize-y px-2 py-1 text-sm rounded-md border bg-slate-800 text-slate-100 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_jp_description ?? null) !== (row.new_jp_description ?? null))}`}
+                                    name={`item-jp-description-${rowId}`}
+                                    autocomplete="off"
                                     rows={5}
                                     value={row.new_jp_description ?? ""}
                                     onInput={(e) => setRowNewJapaneseDescription(rowId, e.currentTarget.value)}

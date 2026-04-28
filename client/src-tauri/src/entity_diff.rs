@@ -172,6 +172,43 @@ pub struct SpellDiffResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AbilityDiffRow {
+    pub row: u32,
+    pub old_id: Option<u32>,
+    pub old_name: Option<String>,
+    pub old_name_jp: Option<String>,
+    pub old_description_en: Option<String>,
+    pub old_description_jp: Option<String>,
+    pub old_valid_targets: Option<Vec<String>>,
+    pub old_charges_required: Option<u32>,
+    pub old_range: Option<i32>,
+    pub old_radius: Option<i32>,
+    pub old_aoe_type: Option<String>,
+    pub old_valid_target_type: Option<String>,
+    pub new_id: Option<u32>,
+    pub new_name: Option<String>,
+    pub new_name_jp: Option<String>,
+    pub new_description_en: Option<String>,
+    pub new_description_jp: Option<String>,
+    pub new_valid_targets: Option<Vec<String>>,
+    pub new_charges_required: Option<u32>,
+    pub new_range: Option<i32>,
+    pub new_radius: Option<i32>,
+    pub new_aoe_type: Option<String>,
+    pub new_valid_target_type: Option<String>,
+    pub target_id: Option<u32>,
+    pub choice: EntityDiffChoice,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AbilityDiffResult {
+    pub rows: Vec<AbilityDiffRow>,
+    pub old_count: usize,
+    pub new_count: usize,
+    pub changed_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EntityDiffSaveResult {
     pub written_count: usize,
     pub kept_old_count: usize,
@@ -191,6 +228,19 @@ pub struct SpellDiffSaveResult {
     pub spell_names_jp_path: Option<String>,
     pub spell_descriptions_en_path: Option<String>,
     pub spell_descriptions_jp_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AbilityDiffSaveResult {
+    pub written_count: usize,
+    pub kept_old_count: usize,
+    pub kept_new_count: usize,
+    pub out_yaml_path: String,
+    pub out_dat_path: Option<String>,
+    pub ability_names_en_path: Option<String>,
+    pub ability_names_jp_path: Option<String>,
+    pub ability_descriptions_en_path: Option<String>,
+    pub ability_descriptions_jp_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1151,7 +1201,7 @@ pub fn save_spell_diff_with_text_paths(
     spell_text_paths: Option<SpellTextPaths>,
 ) -> Result<SpellDiffSaveResult> {
     let old_data = load_spell_table(&old_path)?;
-    let mut new_data = load_spell_table(&new_path)?;
+    let new_data = load_spell_table(&new_path)?;
     let mut spell_names_en = spell_text_paths
         .as_ref()
         .map(|paths| load_dmsg_table(&paths.spell_names_en))
@@ -1345,28 +1395,11 @@ pub fn save_spell_diff_with_text_paths(
     }
 
     let merged_count = merged_spells.len();
-    set_spell_entries(&mut new_data, merged_spells)?;
-
-    if let Some(parent) = out_yaml_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    let yaml_file = File::create(&out_yaml_path)?;
-    serde_yaml::to_writer(BufWriter::new(yaml_file), &new_data)?;
-
-    let written_dat = if let Some(dat_path) = out_dat_path {
-        if let Some(parent) = dat_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        let dat: MenuTable = serde_yaml::from_value(new_data)?;
-        let bytes = dat.to_bytes()?;
-        fs::write(&dat_path, bytes)?;
-
-        Some(dat_path.display().to_string())
-    } else {
-        None
-    };
+    let mut output_data =
+        load_existing_menu_output(&out_yaml_path, out_dat_path.as_deref())?.unwrap_or(new_data);
+    set_spell_entries(&mut output_data, merged_spells)?;
+    let written_dat =
+        write_menu_table_outputs(&output_data, &out_yaml_path, out_dat_path.as_deref())?;
 
     let mut spell_names_en_path = None;
     let mut spell_names_jp_path = None;
@@ -1402,6 +1435,410 @@ pub fn save_spell_diff_with_text_paths(
         spell_names_jp_path,
         spell_descriptions_en_path,
         spell_descriptions_jp_path,
+    })
+}
+
+pub fn compare_ability_files_with_text_paths(
+    old_path: PathBuf,
+    new_path: PathBuf,
+    ability_text_paths: Option<AbilityTextPaths>,
+) -> Result<AbilityDiffResult> {
+    let old_data = load_spell_table(&old_path)?;
+    let new_data = load_spell_table(&new_path)?;
+    let ability_text = load_ability_text_tables(&old_path, &new_path, ability_text_paths.as_ref());
+
+    let old_abilities = get_ability_entries(&old_data)?.to_vec();
+    let new_abilities = get_ability_entries(&new_data)?.to_vec();
+
+    let old_entries = align_entries_from_abilities(&old_abilities);
+    let new_entries = align_entries_from_abilities(&new_abilities);
+    let operations = align_operations(&old_entries, &new_entries);
+
+    let mut changed_count = 0usize;
+    let rows = operations
+        .iter()
+        .enumerate()
+        .map(|(idx, op)| match op {
+            AlignOp::Pair(old_idx, new_idx) => {
+                let old_ability = &old_abilities[*old_idx];
+                let new_ability = &new_abilities[*new_idx];
+
+                let old_id = get_ability_id(old_ability);
+                let old_name = lookup_ability_text(&ability_text.ability_names_en, old_ability);
+                let old_name_jp = lookup_ability_text(&ability_text.ability_names_jp, old_ability);
+                let old_description_en =
+                    lookup_ability_text(&ability_text.ability_descriptions_en, old_ability);
+                let old_description_jp =
+                    lookup_ability_text(&ability_text.ability_descriptions_jp, old_ability);
+                let old_valid_targets = get_ability_valid_targets(old_ability);
+                let old_charges_required = get_ability_charges_required(old_ability);
+                let old_range = get_ability_range(old_ability);
+                let old_radius = get_ability_radius(old_ability);
+                let old_aoe_type = get_ability_aoe_type(old_ability);
+                let old_valid_target_type = get_ability_valid_target_type(old_ability);
+
+                let new_id = get_ability_id(new_ability);
+                let new_name = lookup_ability_text(&ability_text.ability_names_en, new_ability);
+                let new_name_jp = lookup_ability_text(&ability_text.ability_names_jp, new_ability);
+                let new_description_en =
+                    lookup_ability_text(&ability_text.ability_descriptions_en, new_ability);
+                let new_description_jp =
+                    lookup_ability_text(&ability_text.ability_descriptions_jp, new_ability);
+                let new_valid_targets = get_ability_valid_targets(new_ability);
+                let new_charges_required = get_ability_charges_required(new_ability);
+                let new_range = get_ability_range(new_ability);
+                let new_radius = get_ability_radius(new_ability);
+                let new_aoe_type = get_ability_aoe_type(new_ability);
+                let new_valid_target_type = get_ability_valid_target_type(new_ability);
+
+                let is_changed = old_id != new_id
+                    || old_name != new_name
+                    || old_name_jp != new_name_jp
+                    || old_description_en != new_description_en
+                    || old_description_jp != new_description_jp
+                    || old_valid_targets != new_valid_targets
+                    || old_charges_required != new_charges_required
+                    || old_range != new_range
+                    || old_radius != new_radius
+                    || old_aoe_type != new_aoe_type
+                    || old_valid_target_type != new_valid_target_type;
+                if is_changed {
+                    changed_count += 1;
+                }
+
+                AbilityDiffRow {
+                    row: idx as u32,
+                    old_id,
+                    old_name,
+                    old_name_jp,
+                    old_description_en,
+                    old_description_jp,
+                    old_valid_targets,
+                    old_charges_required,
+                    old_range,
+                    old_radius,
+                    old_aoe_type,
+                    old_valid_target_type,
+                    new_id,
+                    new_name,
+                    new_name_jp,
+                    new_description_en,
+                    new_description_jp,
+                    new_valid_targets,
+                    new_charges_required,
+                    new_range,
+                    new_radius,
+                    new_aoe_type,
+                    new_valid_target_type,
+                    target_id: new_id.or(old_id),
+                    choice: EntityDiffChoice::New,
+                }
+            }
+            AlignOp::Delete(old_idx) => {
+                let old_ability = &old_abilities[*old_idx];
+                changed_count += 1;
+
+                let old_id = get_ability_id(old_ability);
+                AbilityDiffRow {
+                    row: idx as u32,
+                    old_id,
+                    old_name: lookup_ability_text(&ability_text.ability_names_en, old_ability),
+                    old_name_jp: lookup_ability_text(&ability_text.ability_names_jp, old_ability),
+                    old_description_en: lookup_ability_text(
+                        &ability_text.ability_descriptions_en,
+                        old_ability,
+                    ),
+                    old_description_jp: lookup_ability_text(
+                        &ability_text.ability_descriptions_jp,
+                        old_ability,
+                    ),
+                    old_valid_targets: get_ability_valid_targets(old_ability),
+                    old_charges_required: get_ability_charges_required(old_ability),
+                    old_range: get_ability_range(old_ability),
+                    old_radius: get_ability_radius(old_ability),
+                    old_aoe_type: get_ability_aoe_type(old_ability),
+                    old_valid_target_type: get_ability_valid_target_type(old_ability),
+                    new_id: None,
+                    new_name: None,
+                    new_name_jp: None,
+                    new_description_en: None,
+                    new_description_jp: None,
+                    new_valid_targets: None,
+                    new_charges_required: None,
+                    new_range: None,
+                    new_radius: None,
+                    new_aoe_type: None,
+                    new_valid_target_type: None,
+                    target_id: old_id,
+                    choice: EntityDiffChoice::Old,
+                }
+            }
+            AlignOp::Insert(new_idx) => {
+                let new_ability = &new_abilities[*new_idx];
+                changed_count += 1;
+
+                let new_id = get_ability_id(new_ability);
+                AbilityDiffRow {
+                    row: idx as u32,
+                    old_id: None,
+                    old_name: None,
+                    old_name_jp: None,
+                    old_description_en: None,
+                    old_description_jp: None,
+                    old_valid_targets: None,
+                    old_charges_required: None,
+                    old_range: None,
+                    old_radius: None,
+                    old_aoe_type: None,
+                    old_valid_target_type: None,
+                    new_id,
+                    new_name: lookup_ability_text(&ability_text.ability_names_en, new_ability),
+                    new_name_jp: lookup_ability_text(&ability_text.ability_names_jp, new_ability),
+                    new_description_en: lookup_ability_text(
+                        &ability_text.ability_descriptions_en,
+                        new_ability,
+                    ),
+                    new_description_jp: lookup_ability_text(
+                        &ability_text.ability_descriptions_jp,
+                        new_ability,
+                    ),
+                    new_valid_targets: get_ability_valid_targets(new_ability),
+                    new_charges_required: get_ability_charges_required(new_ability),
+                    new_range: get_ability_range(new_ability),
+                    new_radius: get_ability_radius(new_ability),
+                    new_aoe_type: get_ability_aoe_type(new_ability),
+                    new_valid_target_type: get_ability_valid_target_type(new_ability),
+                    target_id: new_id,
+                    choice: EntityDiffChoice::New,
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+
+    Ok(AbilityDiffResult {
+        rows,
+        old_count: old_abilities.len(),
+        new_count: new_abilities.len(),
+        changed_count,
+    })
+}
+
+pub fn save_ability_diff_with_text_paths(
+    old_path: PathBuf,
+    new_path: PathBuf,
+    rows: Vec<AbilityDiffRow>,
+    out_yaml_path: PathBuf,
+    out_dat_path: Option<PathBuf>,
+    ability_text_paths: Option<AbilityTextPaths>,
+) -> Result<AbilityDiffSaveResult> {
+    let old_data = load_spell_table(&old_path)?;
+    let new_data = load_spell_table(&new_path)?;
+    let mut ability_names_en = ability_text_paths
+        .as_ref()
+        .map(|paths| load_dmsg_table(&paths.ability_names_en))
+        .transpose()?;
+    let mut ability_names_jp = ability_text_paths
+        .as_ref()
+        .map(|paths| load_dmsg_table(&paths.ability_names_jp))
+        .transpose()?;
+    let mut ability_descriptions_en = ability_text_paths
+        .as_ref()
+        .map(|paths| load_dmsg_table(&paths.ability_descriptions_en))
+        .transpose()?;
+    let mut ability_descriptions_jp = ability_text_paths
+        .as_ref()
+        .map(|paths| load_dmsg_table(&paths.ability_descriptions_jp))
+        .transpose()?;
+
+    let old_abilities = get_ability_entries(&old_data)?.to_vec();
+    let new_abilities = get_ability_entries(&new_data)?.to_vec();
+
+    let old_entries = align_entries_from_abilities(&old_abilities);
+    let new_entries = align_entries_from_abilities(&new_abilities);
+    let operations = align_operations(&old_entries, &new_entries);
+
+    let row_lookup = rows
+        .into_iter()
+        .map(|row| (row.row, row))
+        .collect::<HashMap<_, _>>();
+
+    let mut merged_abilities = Vec::with_capacity(operations.len());
+    let mut kept_old_count = 0usize;
+    let mut kept_new_count = 0usize;
+
+    for (idx, op) in operations.iter().enumerate() {
+        let row = row_lookup.get(&(idx as u32));
+
+        let old_ability = match op {
+            AlignOp::Pair(old_idx, _) | AlignOp::Delete(old_idx) => {
+                old_abilities.get(*old_idx).cloned()
+            }
+            AlignOp::Insert(_) => None,
+        };
+        let new_ability = match op {
+            AlignOp::Pair(_, new_idx) | AlignOp::Insert(new_idx) => {
+                new_abilities.get(*new_idx).cloned()
+            }
+            AlignOp::Delete(_) => None,
+        };
+
+        let requested_choice = row.map(|row| row.choice).unwrap_or_else(|| match op {
+            AlignOp::Delete(_) => EntityDiffChoice::Old,
+            _ => EntityDiffChoice::New,
+        });
+
+        let (mut selected_ability, effective_choice) = match requested_choice {
+            EntityDiffChoice::Old => {
+                if let Some(ability) = old_ability {
+                    (ability, EntityDiffChoice::Old)
+                } else if let Some(ability) = new_ability {
+                    (ability, EntityDiffChoice::New)
+                } else {
+                    continue;
+                }
+            }
+            EntityDiffChoice::New => {
+                if let Some(ability) = new_ability {
+                    (ability, EntityDiffChoice::New)
+                } else if let Some(ability) = old_ability {
+                    (ability, EntityDiffChoice::Old)
+                } else {
+                    continue;
+                }
+            }
+        };
+
+        if let Some(target_id) = row
+            .and_then(|row| row.target_id)
+            .or_else(|| {
+                row.and_then(|row| match effective_choice {
+                    EntityDiffChoice::Old => row.old_id,
+                    EntityDiffChoice::New => row.new_id,
+                })
+            })
+            .or_else(|| get_ability_id(&selected_ability))
+        {
+            set_ability_id(&mut selected_ability, target_id);
+        }
+        let target_text_id =
+            get_ability_id(&selected_ability).or_else(|| row.and_then(|row| row.target_id));
+
+        let chosen_valid_targets = row.and_then(|row| match effective_choice {
+            EntityDiffChoice::Old => row.old_valid_targets.clone(),
+            EntityDiffChoice::New => row.new_valid_targets.clone(),
+        });
+        if let Some(valid_targets) = chosen_valid_targets {
+            set_ability_valid_targets(&mut selected_ability, &valid_targets);
+        }
+
+        if let Some(text_id) = target_text_id {
+            if let (Some(row), Some(table)) = (row, ability_names_en.as_mut()) {
+                if let Some(name) = row.new_name.clone() {
+                    set_dmsg_first_string(table, text_id, name);
+                }
+            }
+            if let (Some(row), Some(table)) = (row, ability_names_jp.as_mut()) {
+                if let Some(name) = row.new_name_jp.clone() {
+                    set_dmsg_first_string(table, text_id, name);
+                }
+            }
+            if let (Some(row), Some(table)) = (row, ability_descriptions_en.as_mut()) {
+                if let Some(description) = row.new_description_en.clone() {
+                    set_dmsg_first_string(table, text_id, description);
+                }
+            }
+            if let (Some(row), Some(table)) = (row, ability_descriptions_jp.as_mut()) {
+                if let Some(description) = row.new_description_jp.clone() {
+                    set_dmsg_first_string(table, text_id, description);
+                }
+            }
+        }
+
+        if let Some(charges_required) = row.and_then(|row| match effective_choice {
+            EntityDiffChoice::Old => row.old_charges_required,
+            EntityDiffChoice::New => row.new_charges_required,
+        }) {
+            set_ability_charges_required(&mut selected_ability, charges_required);
+        }
+
+        if let Some(range) = row.and_then(|row| match effective_choice {
+            EntityDiffChoice::Old => row.old_range,
+            EntityDiffChoice::New => row.new_range,
+        }) {
+            set_ability_range(&mut selected_ability, range);
+        }
+
+        if let Some(radius) = row.and_then(|row| match effective_choice {
+            EntityDiffChoice::Old => row.old_radius,
+            EntityDiffChoice::New => row.new_radius,
+        }) {
+            set_ability_radius(&mut selected_ability, radius);
+        }
+
+        if let Some(aoe_type) = row.and_then(|row| match effective_choice {
+            EntityDiffChoice::Old => row.old_aoe_type.clone(),
+            EntityDiffChoice::New => row.new_aoe_type.clone(),
+        }) {
+            set_ability_aoe_type(&mut selected_ability, aoe_type);
+        }
+
+        if let Some(valid_target_type) = row.and_then(|row| match effective_choice {
+            EntityDiffChoice::Old => row.old_valid_target_type.clone(),
+            EntityDiffChoice::New => row.new_valid_target_type.clone(),
+        }) {
+            set_ability_valid_target_type(&mut selected_ability, valid_target_type);
+        }
+
+        match effective_choice {
+            EntityDiffChoice::Old => kept_old_count += 1,
+            EntityDiffChoice::New => kept_new_count += 1,
+        }
+        merged_abilities.push(selected_ability);
+    }
+
+    let merged_count = merged_abilities.len();
+    let mut output_data =
+        load_existing_menu_output(&out_yaml_path, out_dat_path.as_deref())?.unwrap_or(new_data);
+    set_ability_entries(&mut output_data, merged_abilities)?;
+    let written_dat =
+        write_menu_table_outputs(&output_data, &out_yaml_path, out_dat_path.as_deref())?;
+
+    let mut ability_names_en_path = None;
+    let mut ability_names_jp_path = None;
+    let mut ability_descriptions_en_path = None;
+    let mut ability_descriptions_jp_path = None;
+
+    if let Some(paths) = ability_text_paths {
+        if let Some(table) = ability_names_en {
+            write_dmsg_table(&paths.ability_names_en, &table)?;
+            ability_names_en_path = Some(paths.ability_names_en.display().to_string());
+        }
+        if let Some(table) = ability_names_jp {
+            write_dmsg_table(&paths.ability_names_jp, &table)?;
+            ability_names_jp_path = Some(paths.ability_names_jp.display().to_string());
+        }
+        if let Some(table) = ability_descriptions_en {
+            write_dmsg_table(&paths.ability_descriptions_en, &table)?;
+            ability_descriptions_en_path =
+                Some(paths.ability_descriptions_en.display().to_string());
+        }
+        if let Some(table) = ability_descriptions_jp {
+            write_dmsg_table(&paths.ability_descriptions_jp, &table)?;
+            ability_descriptions_jp_path =
+                Some(paths.ability_descriptions_jp.display().to_string());
+        }
+    }
+
+    Ok(AbilityDiffSaveResult {
+        written_count: merged_count,
+        kept_old_count,
+        kept_new_count,
+        out_yaml_path: out_yaml_path.display().to_string(),
+        out_dat_path: written_dat,
+        ability_names_en_path,
+        ability_names_jp_path,
+        ability_descriptions_en_path,
+        ability_descriptions_jp_path,
     })
 }
 
@@ -1467,6 +1904,49 @@ fn load_spell_table(path: &PathBuf) -> Result<Value> {
     }
 
     decode_spell_dat(&bytes)
+}
+
+fn load_existing_menu_output(
+    out_yaml_path: &Path,
+    out_dat_path: Option<&Path>,
+) -> Result<Option<Value>> {
+    if out_yaml_path.is_file() {
+        return load_spell_table(&out_yaml_path.to_path_buf()).map(Some);
+    }
+
+    if let Some(out_dat_path) = out_dat_path {
+        if out_dat_path.is_file() {
+            return load_spell_table(&out_dat_path.to_path_buf()).map(Some);
+        }
+    }
+
+    Ok(None)
+}
+
+fn write_menu_table_outputs(
+    data: &Value,
+    out_yaml_path: &Path,
+    out_dat_path: Option<&Path>,
+) -> Result<Option<String>> {
+    if let Some(parent) = out_yaml_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let yaml_file = File::create(out_yaml_path)?;
+    serde_yaml::to_writer(BufWriter::new(yaml_file), data)?;
+
+    if let Some(dat_path) = out_dat_path {
+        if let Some(parent) = dat_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let dat: MenuTable = serde_yaml::from_value(data.clone())?;
+        let bytes = dat.to_bytes()?;
+        fs::write(dat_path, bytes)?;
+        Ok(Some(dat_path.display().to_string()))
+    } else {
+        Ok(None)
+    }
 }
 
 fn load_dmsg_table(path: &PathBuf) -> Result<DmsgTable> {
@@ -1555,6 +2035,16 @@ fn align_entries_from_spells(spells: &[Value]) -> Vec<AlignEntry> {
         .map(|spell| AlignEntry {
             id: get_spell_index(spell).unwrap_or(0),
             name: get_spell_name(spell).unwrap_or_default(),
+        })
+        .collect()
+}
+
+fn align_entries_from_abilities(abilities: &[Value]) -> Vec<AlignEntry> {
+    abilities
+        .iter()
+        .map(|ability| AlignEntry {
+            id: get_ability_id(ability).unwrap_or(0),
+            name: String::new(),
         })
         .collect()
 }
@@ -1780,6 +2270,22 @@ pub struct SpellTextPaths {
     pub spell_names_jp: PathBuf,
     pub spell_descriptions_en: PathBuf,
     pub spell_descriptions_jp: PathBuf,
+}
+
+#[derive(Debug, Default)]
+struct AbilityTextTables {
+    ability_names_en: HashMap<u32, String>,
+    ability_names_jp: HashMap<u32, String>,
+    ability_descriptions_en: HashMap<u32, String>,
+    ability_descriptions_jp: HashMap<u32, String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AbilityTextPaths {
+    pub ability_names_en: PathBuf,
+    pub ability_names_jp: PathBuf,
+    pub ability_descriptions_en: PathBuf,
+    pub ability_descriptions_jp: PathBuf,
 }
 
 fn get_item_icon_bytes(item: &Value) -> Option<String> {
@@ -2127,6 +2633,141 @@ fn set_spell_entries(root: &mut Value, entries: Vec<Value>) -> Result<()> {
     Err(anyhow::anyhow!("Could not locate Mgc_ spell section."))
 }
 
+fn get_ability_entries(root: &Value) -> Result<&Vec<Value>> {
+    root.as_mapping()
+        .and_then(|mapping| mapping.get(Value::String("sections".to_string())))
+        .and_then(Value::as_sequence)
+        .and_then(|sections| {
+            sections.iter().find_map(|section| {
+                let section_mapping = section.as_mapping()?;
+                let section_type = section_mapping
+                    .get(Value::String("type".to_string()))?
+                    .as_str()?;
+                if section_type != "Comm" {
+                    return None;
+                }
+
+                section_mapping
+                    .get(Value::String("entries".to_string()))
+                    .and_then(Value::as_sequence)
+            })
+        })
+        .ok_or_else(|| anyhow::anyhow!("Could not locate Comm ability entries."))
+}
+
+fn set_ability_entries(root: &mut Value, entries: Vec<Value>) -> Result<()> {
+    let Some(mapping) = root.as_mapping_mut() else {
+        return Err(anyhow::anyhow!("Ability data is not a mapping."));
+    };
+
+    let sections_key = Value::String("sections".to_string());
+    let Some(sections_value) = mapping.get_mut(&sections_key) else {
+        return Err(anyhow::anyhow!("Ability data has no sections."));
+    };
+    let Some(sections) = sections_value.as_sequence_mut() else {
+        return Err(anyhow::anyhow!("Ability sections are not a list."));
+    };
+
+    for section in sections {
+        let Some(section_mapping) = section.as_mapping_mut() else {
+            continue;
+        };
+        let section_type = section_mapping
+            .get(Value::String("type".to_string()))
+            .and_then(Value::as_str);
+        if section_type != Some("Comm") {
+            continue;
+        }
+
+        section_mapping.insert(
+            Value::String("entries".to_string()),
+            Value::Sequence(entries),
+        );
+        return Ok(());
+    }
+
+    Err(anyhow::anyhow!("Could not locate Comm ability section."))
+}
+
+fn get_menu_section_entries(root: &Value, section_type: &str) -> Result<Vec<Value>> {
+    root.as_mapping()
+        .and_then(|mapping| mapping.get(Value::String("sections".to_string())))
+        .and_then(Value::as_sequence)
+        .and_then(|sections| {
+            sections.iter().find_map(|section| {
+                let section_mapping = section.as_mapping()?;
+                let current_section_type = section_mapping
+                    .get(Value::String("type".to_string()))?
+                    .as_str()?;
+                if current_section_type != section_type {
+                    return None;
+                }
+
+                section_mapping
+                    .get(Value::String("entries".to_string()))
+                    .and_then(Value::as_sequence)
+                    .cloned()
+            })
+        })
+        .ok_or_else(|| anyhow::anyhow!("Could not locate {section_type} entries."))
+}
+
+fn set_menu_section_entries(
+    root: &mut Value,
+    section_type: &str,
+    entries: Vec<Value>,
+) -> Result<()> {
+    let Some(mapping) = root.as_mapping_mut() else {
+        return Err(anyhow::anyhow!("Menu data is not a mapping."));
+    };
+
+    let sections_key = Value::String("sections".to_string());
+    let Some(sections_value) = mapping.get_mut(&sections_key) else {
+        return Err(anyhow::anyhow!("Menu data has no sections."));
+    };
+    let Some(sections) = sections_value.as_sequence_mut() else {
+        return Err(anyhow::anyhow!("Menu sections are not a list."));
+    };
+
+    for section in sections {
+        let Some(section_mapping) = section.as_mapping_mut() else {
+            continue;
+        };
+        let current_section_type = section_mapping
+            .get(Value::String("type".to_string()))
+            .and_then(Value::as_str);
+        if current_section_type != Some(section_type) {
+            continue;
+        }
+
+        section_mapping.insert(
+            Value::String("entries".to_string()),
+            Value::Sequence(entries),
+        );
+        return Ok(());
+    }
+
+    Err(anyhow::anyhow!("Could not locate {section_type} section."))
+}
+
+pub fn reset_menu_section_to_retail_base(
+    retail_base_dat_path: PathBuf,
+    custom_dat_path: PathBuf,
+    section_type: &str,
+) -> Result<PathBuf> {
+    let retail_data = load_spell_table(&retail_base_dat_path)?;
+    let retail_entries = get_menu_section_entries(&retail_data, section_type)?;
+    let custom_yaml_path = project_yaml_path_for_dat_path(&custom_dat_path)
+        .unwrap_or_else(|| custom_dat_path.with_extension("yml"));
+    let mut output_data = load_existing_menu_output(&custom_yaml_path, Some(&custom_dat_path))?
+        .unwrap_or(retail_data);
+
+    set_menu_section_entries(&mut output_data, section_type, retail_entries)?;
+    write_menu_table_outputs(&output_data, &custom_yaml_path, Some(&custom_dat_path))?;
+
+    Ok(custom_dat_path)
+}
+
 fn get_spell_u32(item: &Value, key: &str) -> Option<u32> {
     let mapping = item.as_mapping()?;
     let value = mapping.get(Value::String(key.to_string()))?;
@@ -2256,6 +2897,62 @@ fn set_spell_valid_target_type(item: &mut Value, valid_target_type: String) -> b
     set_spell_string(item, "valid_target_type", valid_target_type)
 }
 
+fn get_ability_id(item: &Value) -> Option<u32> {
+    get_spell_u32(item, "id")
+}
+
+fn set_ability_id(item: &mut Value, id: u32) -> bool {
+    set_spell_u32(item, "id", id)
+}
+
+fn get_ability_charges_required(item: &Value) -> Option<u32> {
+    get_spell_u32(item, "charges_required")
+}
+
+fn set_ability_charges_required(item: &mut Value, charges_required: u32) -> bool {
+    set_spell_u32(item, "charges_required", charges_required)
+}
+
+fn get_ability_range(item: &Value) -> Option<i32> {
+    get_spell_i32(item, "range")
+}
+
+fn set_ability_range(item: &mut Value, range: i32) -> bool {
+    set_spell_i32(item, "range", range)
+}
+
+fn get_ability_radius(item: &Value) -> Option<i32> {
+    get_spell_i32(item, "radius")
+}
+
+fn set_ability_radius(item: &mut Value, radius: i32) -> bool {
+    set_spell_i32(item, "radius", radius)
+}
+
+fn get_ability_aoe_type(item: &Value) -> Option<String> {
+    get_spell_string(item, "aoe_type")
+}
+
+fn set_ability_aoe_type(item: &mut Value, aoe_type: String) -> bool {
+    set_spell_string(item, "aoe_type", aoe_type)
+}
+
+fn get_ability_valid_target_type(item: &Value) -> Option<String> {
+    get_spell_string(item, "valid_target_type")
+}
+
+fn set_ability_valid_target_type(item: &mut Value, valid_target_type: String) -> bool {
+    set_spell_string(item, "valid_target_type", valid_target_type)
+}
+
+fn get_ability_valid_targets(item: &Value) -> Option<Vec<String>> {
+    get_spell_valid_targets(item)
+}
+
+fn set_ability_valid_targets(item: &mut Value, valid_targets: &[String]) -> bool {
+    set_spell_valid_targets(item, valid_targets)
+}
+
 fn get_spell_cast_time(item: &Value) -> Option<u32> {
     get_spell_u32(item, "cast_time")
 }
@@ -2304,6 +3001,10 @@ fn set_spell_level_required(item: &mut Value, levels: &HashMap<String, u32>) -> 
 
 fn lookup_spell_text(table: &HashMap<u32, String>, spell: &Value) -> Option<String> {
     get_spell_index(spell).and_then(|index| table.get(&index).cloned())
+}
+
+fn lookup_ability_text(table: &HashMap<u32, String>, ability: &Value) -> Option<String> {
+    get_ability_id(ability).and_then(|id| table.get(&id).cloned())
 }
 
 fn resolve_spell_name(spell: &Value, spell_text: &SpellTextTables) -> Option<String> {
@@ -2392,10 +3093,100 @@ fn load_spell_text_tables(
     SpellTextTables::default()
 }
 
+fn load_ability_text_tables(
+    old_path: &Path,
+    new_path: &Path,
+    ability_text_paths: Option<&AbilityTextPaths>,
+) -> AbilityTextTables {
+    if let Some(paths) = ability_text_paths {
+        let ability_names_en = load_dmsg_table(&paths.ability_names_en)
+            .map(|table| dmsg_first_string_map(&table))
+            .unwrap_or_default();
+        let ability_names_jp = load_dmsg_table(&paths.ability_names_jp)
+            .map(|table| dmsg_first_string_map(&table))
+            .unwrap_or_default();
+        let ability_descriptions_en = load_dmsg_table(&paths.ability_descriptions_en)
+            .map(|table| dmsg_first_string_map(&table))
+            .unwrap_or_default();
+        let ability_descriptions_jp = load_dmsg_table(&paths.ability_descriptions_jp)
+            .map(|table| dmsg_first_string_map(&table))
+            .unwrap_or_default();
+
+        if !ability_names_en.is_empty() || !ability_names_jp.is_empty() {
+            return AbilityTextTables {
+                ability_names_en,
+                ability_names_jp,
+                ability_descriptions_en,
+                ability_descriptions_jp,
+            };
+        }
+    }
+
+    let mut candidate_roots = Vec::new();
+
+    if let Some(root) = find_ffxi_root_from_path(new_path) {
+        candidate_roots.push(root);
+    }
+    if let Some(root) = find_ffxi_root_from_path(old_path) {
+        if !candidate_roots.contains(&root) {
+            candidate_roots.push(root);
+        }
+    }
+    for root in default_ffxi_install_roots() {
+        if !candidate_roots.contains(&root) {
+            candidate_roots.push(root);
+        }
+    }
+
+    for root in candidate_roots {
+        if let Ok(dat_context) = DatContext::from_ffxi_path(root) {
+            let ability_names_en = dat_context
+                .get_data_from_dat(&Dat::<DmsgTable>::from(55701u32))
+                .ok()
+                .map(|data| dmsg_first_string_map(&data.dat))
+                .unwrap_or_default();
+            let ability_names_jp = dat_context
+                .get_data_from_dat(&Dat::<DmsgTable>::from(55581u32))
+                .ok()
+                .map(|data| dmsg_first_string_map(&data.dat))
+                .unwrap_or_default();
+            let ability_descriptions_en = dat_context
+                .get_data_from_dat(&Dat::<DmsgTable>::from(55733u32))
+                .ok()
+                .map(|data| dmsg_first_string_map(&data.dat))
+                .unwrap_or_default();
+            let ability_descriptions_jp = dat_context
+                .get_data_from_dat(&Dat::<DmsgTable>::from(55613u32))
+                .ok()
+                .map(|data| dmsg_first_string_map(&data.dat))
+                .unwrap_or_default();
+
+            if !ability_names_en.is_empty() {
+                return AbilityTextTables {
+                    ability_names_en,
+                    ability_names_jp,
+                    ability_descriptions_en,
+                    ability_descriptions_jp,
+                };
+            }
+        }
+    }
+
+    AbilityTextTables::default()
+}
+
 fn find_ffxi_root_from_path(path: &Path) -> Option<PathBuf> {
     path.ancestors()
         .find(|ancestor| ancestor.join("VTABLE.DAT").exists())
         .map(Path::to_path_buf)
+}
+
+fn normalize_dmsg_editor_string(value: &str) -> String {
+    if value == "." {
+        "(Empty)".to_string()
+    } else {
+        value.to_string()
+    }
 }
 
 fn dmsg_first_string_map(table: &DmsgTable) -> HashMap<u32, String> {
@@ -2404,7 +3195,9 @@ fn dmsg_first_string_map(table: &DmsgTable) -> HashMap<u32, String> {
         .iter()
         .filter_map(|(id, list)| {
             list.content.iter().find_map(|entry| match entry {
-                DmsgContent::String { string } if !string.is_empty() => Some((*id, string.clone())),
+                DmsgContent::String { string } if !string.is_empty() => {
+                    Some((*id, normalize_dmsg_editor_string(string)))
+                }
                 _ => None,
             })
         })

@@ -82,7 +82,7 @@ function getOutputRoot(projectRoot: string | null): string | null {
     return null;
   }
 
-  return projectRoot.replaceAll("\\", "/").replace(/\/+$/, "");
+  return `${projectRoot.replaceAll("\\", "/").replace(/\/+$/, "")}/Custom`;
 }
 
 function buildAutoSavePaths(
@@ -669,7 +669,7 @@ function EntityDiffTool() {
         <div class="flex flex-row gap-2 items-center">
           <button
             class={compactButtonClass()}
-            onclick={() => pickFile(setEditedFile, pickerDefaultPath(editedPath(), getProjectFolder()))}
+            onclick={() => pickFile(setEditedFile, pickerDefaultPath(editedPath(), getOutputRoot(getProjectFolder())))}
           >
             Edited DAT/YAML
           </button>

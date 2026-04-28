@@ -1,7 +1,7 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { useNavigate } from "@solidjs/router";
-import { For, Show, createEffect, createSignal } from "solid-js";
-import { FolderDiffResult, compareEntityNameFolders } from "../custom_bindings";
+import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
+import { FolderDiffEntry, FolderDiffResult, compareEntityNameFolders } from "../custom_bindings";
 import { showMessage } from "../dialogs";
 import { useData } from "../store";
 import { unwrap } from "../util";
@@ -20,7 +20,14 @@ function defaultCustomFolderFromRoot(root: string | null): string | null {
   if (!root) {
     return null;
   }
-  return normalizePath(root);
+  return `${normalizePath(root)}/Custom`;
+}
+
+function defaultRetailBaseFolderFromRoot(root: string | null): string | null {
+  if (!root) {
+    return null;
+  }
+  return `${normalizePath(root)}/Retail Base`;
 }
 
 function defaultOldRetailFolderFromRoot(root: string | null): string | null {
@@ -37,12 +44,23 @@ function formatRelativePathForDisplay(path: string) {
     .join("/");
 }
 
-const FILE_DIFFS_STATE_KEY = "xi_tinkerer_file_diffs_state_v1";
+const FILE_DIFFS_STATE_KEY = "xi_tinkerer_file_diffs_state_v2";
+
+type FileDiffSortColumn =
+  | "relative_path"
+  | "zone_name"
+  | "custom_exists"
+  | "old_retail_path"
+  | "new_retail_path"
+  | "diff_tool";
 
 interface FileDiffsCachedState {
   custom_folder: string;
-  old_retail_folder: string;
+  retail_base_folder: string;
+  old_retail_folder?: string;
   show_unchanged: boolean;
+  sort_column?: FileDiffSortColumn;
+  sort_ascending?: boolean;
   last_notice: string;
   result: FolderDiffResult | null;
 }
@@ -65,6 +83,38 @@ function loadCachedState(): FileDiffsCachedState | null {
     return parsed;
   } catch {
     return null;
+  }
+}
+
+function isFileDiffSortColumn(value: unknown): value is FileDiffSortColumn {
+  return (
+    value === "relative_path"
+    || value === "zone_name"
+    || value === "custom_exists"
+    || value === "old_retail_path"
+    || value === "new_retail_path"
+    || value === "diff_tool"
+  );
+}
+
+function compareStrings(left: string, right: string) {
+  return left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
+}
+
+function sortValueForFile(file: FolderDiffEntry, column: FileDiffSortColumn): string {
+  switch (column) {
+    case "relative_path":
+      return formatRelativePathForDisplay(file.relative_path);
+    case "zone_name":
+      return file.zone_name ?? "Unknown";
+    case "custom_exists":
+      return file.custom_exists ? "Found" : "Missing";
+    case "old_retail_path":
+      return file.old_retail_path ? "Found" : "Missing";
+    case "new_retail_path":
+      return file.new_retail_path ? "Found" : "Missing";
+    case "diff_tool":
+      return file.diff_tool;
   }
 }
 
@@ -92,19 +142,42 @@ function FileDiffsTool() {
 
   const projectRoot = getProjectFolder();
   const initialCustomDefault = defaultCustomFolderFromRoot(projectRoot);
-  const initialOldRetailDefault = defaultOldRetailFolderFromRoot(projectRoot);
+  const initialRetailBaseDefault = defaultRetailBaseFolderFromRoot(projectRoot);
 
   const [customFolder, setCustomFolder] = createSignal(
     cachedState?.custom_folder ?? initialCustomDefault ?? "",
   );
-  const [oldRetailFolder, setOldRetailFolder] = createSignal(
-    cachedState?.old_retail_folder ?? initialOldRetailDefault ?? "",
+  const [retailBaseFolder, setRetailBaseFolder] = createSignal(
+    cachedState?.retail_base_folder ?? cachedState?.old_retail_folder ?? initialRetailBaseDefault ?? "",
   );
   const [showUnchanged, setShowUnchanged] = createSignal(cachedState?.show_unchanged ?? false);
+  const [sortColumn, setSortColumn] = createSignal<FileDiffSortColumn>(
+    isFileDiffSortColumn(cachedState?.sort_column) ? cachedState.sort_column : "relative_path",
+  );
+  const [sortAscending, setSortAscending] = createSignal(cachedState?.sort_ascending ?? true);
 
   const [isComparing, setComparing] = createSignal(false);
   const [lastNotice, setLastNotice] = createSignal(cachedState?.last_notice ?? "");
   const [result, setResult] = createSignal<FolderDiffResult | null>(cachedResult);
+
+  const visibleFiles = createMemo(() => {
+    const res = result();
+    if (!res) {
+      return [];
+    }
+
+    const column = sortColumn();
+    const direction = sortAscending() ? 1 : -1;
+    const source = showUnchanged() ? res.all_files : res.changed_files;
+    return [...source].sort((left, right) => {
+      const primary = compareStrings(sortValueForFile(left, column), sortValueForFile(right, column));
+      if (primary !== 0) {
+        return primary * direction;
+      }
+
+      return compareStrings(left.relative_path, right.relative_path);
+    });
+  });
 
   createEffect(() => {
     const projectFolder = getProjectFolder();
@@ -113,7 +186,8 @@ function FileDiffsTool() {
     }
 
     const nextCustomDefault = defaultCustomFolderFromRoot(projectFolder);
-    const nextOldRetailDefault = defaultOldRetailFolderFromRoot(projectFolder);
+    const nextRetailBaseDefault = defaultRetailBaseFolderFromRoot(projectFolder);
+    const previousOldRetailDefault = defaultOldRetailFolderFromRoot(projectFolder);
 
     const currentCustom = customFolder();
     if (
@@ -126,15 +200,19 @@ function FileDiffsTool() {
       setCustomFolder(nextCustomDefault);
     }
 
-    const currentOldRetail = oldRetailFolder();
+    const currentRetailBase = retailBaseFolder();
     if (
-      nextOldRetailDefault
+      nextRetailBaseDefault
       && (
-        !currentOldRetail
-        || normalizePath(currentOldRetail) === normalizePath(projectFolder)
+        !currentRetailBase
+        || normalizePath(currentRetailBase) === normalizePath(projectFolder)
+        || (
+          previousOldRetailDefault
+          && normalizePath(currentRetailBase) === normalizePath(previousOldRetailDefault)
+        )
       )
     ) {
-      setOldRetailFolder(nextOldRetailDefault);
+      setRetailBaseFolder(nextRetailBaseDefault);
     }
   });
 
@@ -145,8 +223,10 @@ function FileDiffsTool() {
 
     const stateToSave: FileDiffsCachedState = {
       custom_folder: customFolder(),
-      old_retail_folder: oldRetailFolder(),
+      retail_base_folder: retailBaseFolder(),
       show_unchanged: showUnchanged(),
+      sort_column: sortColumn(),
+      sort_ascending: sortAscending(),
       last_notice: lastNotice(),
       result: result(),
     };
@@ -174,8 +254,8 @@ function FileDiffsTool() {
   const runCompare = async () => {
     const resolvedNewRetailFolder = getDatFolder() || "";
 
-    if (!customFolder() || !oldRetailFolder() || !resolvedNewRetailFolder) {
-      await showMessage("Select Custom + Old Retail folders, then set the FFXI folder in the status bar.", {
+    if (!customFolder() || !retailBaseFolder() || !resolvedNewRetailFolder) {
+      await showMessage("Select Custom + Retail Base folders, then set the FFXI folder in the status bar.", {
         title: "Compare Blocked",
         kind: "warning",
       });
@@ -186,13 +266,13 @@ function FileDiffsTool() {
     try {
       const res = unwrap(await compareEntityNameFolders(
         customFolder(),
-        oldRetailFolder(),
+        retailBaseFolder(),
         resolvedNewRetailFolder,
       ));
 
       setResult(res);
       if (res.retail_changed_count === 0) {
-        setLastNotice("No changed files found between old retail and new retail.");
+        setLastNotice("No changed files found between Retail Base and new retail.");
       } else {
         setLastNotice(`Found ${res.retail_changed_count} changed file(s).`);
       }
@@ -201,6 +281,24 @@ function FileDiffsTool() {
     } finally {
       setComparing(false);
     }
+  };
+
+  const updateSort = (column: FileDiffSortColumn) => {
+    if (column === sortColumn()) {
+      setSortAscending((ascending) => !ascending);
+      return;
+    }
+
+    setSortColumn(column);
+    setSortAscending(true);
+  };
+
+  const sortMarker = (column: FileDiffSortColumn) => {
+    if (column !== sortColumn()) {
+      return "";
+    }
+
+    return sortAscending() ? " ^" : " v";
   };
 
   const openInDiffTool = (customPath: string, newRetailPath: string, diffTool: "Entity" | "Item") => {
@@ -222,17 +320,17 @@ function FileDiffsTool() {
         </div>
 
         <div class="flex flex-row gap-2 items-center">
-          <button class={compactButtonClass()} onclick={() => pickFolder(setOldRetailFolder, oldRetailFolder())}>
-            Old Retail Folder
+          <button class={compactButtonClass()} onclick={() => pickFolder(setRetailBaseFolder, retailBaseFolder())}>
+            Retail Base Folder
           </button>
-          <span class="font-mono text-sm">{oldRetailFolder() || "Not selected"}</span>
+          <span class="font-mono text-sm">{retailBaseFolder() || "Not selected"}</span>
         </div>
 
         <div class="flex flex-row gap-2 items-center">
           <button class={compactButtonClass()} disabled={isComparing()} onclick={runCompare}>
             {isComparing() ? "Comparing..." : "Compare folders"}
           </button>
-          <label class="flex items-center gap-3 text-sm">
+          <label class="flex items-center gap-3 text-sm whitespace-nowrap">
             <input
               type="checkbox"
               checked={showUnchanged()}
@@ -252,23 +350,35 @@ function FileDiffsTool() {
               <div class="text-sm text-slate-300">
                 Retail files scanned: {res().scanned_count} | Retail files changed: {res().retail_changed_count}
                 {" "} | Retail files unchanged: {Math.max(0, res().scanned_count - res().retail_changed_count)}
-                {" "} | Showing: {showUnchanged() ? res().all_files.length : res().changed_files.length}
+                {" "} | Showing: {visibleFiles().length}
               </div>
 
               <div class="max-h-[70vh] overflow-auto border border-slate-700 rounded-md">
                 <table class="w-full">
                   <thead class="sticky top-0 z-10">
                     <tr>
-                      <th>Relative Path</th>
-                      <th>Name</th>
-                      <th>Custom</th>
-                      <th>Old Retail</th>
-                      <th>New Retail</th>
-                      <th>Action</th>
+                      <th class="table-sortable whitespace-nowrap" onclick={() => updateSort("relative_path")}>
+                        Relative Path{sortMarker("relative_path")}
+                      </th>
+                      <th class="table-sortable whitespace-nowrap" onclick={() => updateSort("zone_name")}>
+                        Name{sortMarker("zone_name")}
+                      </th>
+                      <th class="table-sortable whitespace-nowrap" onclick={() => updateSort("custom_exists")}>
+                        Custom{sortMarker("custom_exists")}
+                      </th>
+                      <th class="table-sortable whitespace-nowrap" onclick={() => updateSort("old_retail_path")}>
+                        Retail Base{sortMarker("old_retail_path")}
+                      </th>
+                      <th class="table-sortable whitespace-nowrap" onclick={() => updateSort("new_retail_path")}>
+                        New Retail{sortMarker("new_retail_path")}
+                      </th>
+                      <th class="table-sortable whitespace-nowrap" onclick={() => updateSort("diff_tool")}>
+                        Action{sortMarker("diff_tool")}
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
-                    <For each={showUnchanged() ? res().all_files : res().changed_files}>
+                    <For each={visibleFiles()}>
                       {(file) => (
                         <tr class="hover:bg-slate-700/40">
                           <td class="font-mono text-xs">{formatRelativePathForDisplay(file.relative_path)}</td>

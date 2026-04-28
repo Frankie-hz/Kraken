@@ -22,9 +22,9 @@ use crate::{
     app_persistence::PersistenceData,
     dat_query::{self, BrowseInfo, DatDescriptorInfo, TriangleMetadata, ZoneInfo},
     entity_diff::{
-        self, DiffToolKind, EntityDiffResult, EntityDiffRow, EntityDiffSaveResult,
-        FolderDiffResult, ItemEditorRow, SpellDiffResult, SpellDiffRow, SpellDiffSaveResult,
-        SpellTextPaths,
+        self, AbilityDiffResult, AbilityDiffRow, AbilityDiffSaveResult, AbilityTextPaths,
+        DiffToolKind, EntityDiffResult, EntityDiffRow, EntityDiffSaveResult, FolderDiffResult,
+        ItemEditorRow, SpellDiffResult, SpellDiffRow, SpellDiffSaveResult, SpellTextPaths,
     },
     errors::AppError,
     state::{AppState, FileNotification},
@@ -298,6 +298,28 @@ fn copy_retail_base_to_custom(
     Ok(destination_path)
 }
 
+fn reset_data_menu_section_to_retail_base(
+    relative_path: &str,
+    project_root: &Path,
+    section_type: &str,
+) -> Result<PathBuf, AppError> {
+    let source_path = retail_base_path(project_root, relative_path);
+    if !source_path.is_file() {
+        return Err(anyhow!(
+            "Retail Base DAT copy for {} was not found. Re-sync the base DATs first.",
+            relative_path
+        )
+        .into());
+    }
+
+    let destination_path = custom_path(project_root, relative_path);
+    Ok(entity_diff::reset_menu_section_to_retail_base(
+        source_path,
+        destination_path,
+        section_type,
+    )?)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn copy_item_dats_to_project(
@@ -552,6 +574,126 @@ fn ensure_custom_spell_text_paths(
     spell_editor_text_paths_at_root(dat_context, &custom_root(project_root))
 }
 
+fn ability_editor_relative_paths(
+    dat_context: &DatContext,
+) -> Result<(String, AbilityTextPaths), AppError> {
+    let data_menu = resolve_descriptor_relative_path(
+        DatDescriptor::DataMenu,
+        DatLanguage::English,
+        dat_context,
+    )?;
+    let ability_names_en = resolve_descriptor_relative_path(
+        DatDescriptor::AbilityNames,
+        DatLanguage::English,
+        dat_context,
+    )?;
+    let ability_names_jp = resolve_descriptor_relative_path(
+        DatDescriptor::AbilityNames,
+        DatLanguage::Japanese,
+        dat_context,
+    )?;
+    let ability_descriptions_en = resolve_descriptor_relative_path(
+        DatDescriptor::AbilityDescriptions,
+        DatLanguage::English,
+        dat_context,
+    )?;
+    let ability_descriptions_jp = resolve_descriptor_relative_path(
+        DatDescriptor::AbilityDescriptions,
+        DatLanguage::Japanese,
+        dat_context,
+    )?;
+
+    Ok((
+        data_menu,
+        AbilityTextPaths {
+            ability_names_en: PathBuf::from(ability_names_en),
+            ability_names_jp: PathBuf::from(ability_names_jp),
+            ability_descriptions_en: PathBuf::from(ability_descriptions_en),
+            ability_descriptions_jp: PathBuf::from(ability_descriptions_jp),
+        },
+    ))
+}
+
+fn ability_editor_text_paths_at_root(
+    dat_context: &DatContext,
+    root: &Path,
+) -> Result<AbilityTextPaths, AppError> {
+    let (_, relative_paths) = ability_editor_relative_paths(dat_context)?;
+    Ok(AbilityTextPaths {
+        ability_names_en: root.join(relative_paths.ability_names_en),
+        ability_names_jp: root.join(relative_paths.ability_names_jp),
+        ability_descriptions_en: root.join(relative_paths.ability_descriptions_en),
+        ability_descriptions_jp: root.join(relative_paths.ability_descriptions_jp),
+    })
+}
+
+fn ability_text_paths_complete(paths: &AbilityTextPaths) -> bool {
+    paths.ability_names_en.is_file()
+        && paths.ability_names_jp.is_file()
+        && paths.ability_descriptions_en.is_file()
+        && paths.ability_descriptions_jp.is_file()
+}
+
+fn ability_editor_source_text_paths(
+    dat_context: &DatContext,
+    project_root: &Path,
+    source_path: &Path,
+) -> Result<AbilityTextPaths, AppError> {
+    let custom_paths = ability_editor_text_paths_at_root(dat_context, &custom_root(project_root))?;
+    let retail_base_paths =
+        ability_editor_text_paths_at_root(dat_context, &retail_base_root(project_root))?;
+
+    if path_is_within_root(source_path, &custom_root(project_root))
+        && ability_text_paths_complete(&custom_paths)
+    {
+        return Ok(custom_paths);
+    }
+
+    if ability_text_paths_complete(&retail_base_paths) {
+        return Ok(retail_base_paths);
+    }
+
+    if ability_text_paths_complete(&custom_paths) {
+        return Ok(custom_paths);
+    }
+
+    Ok(retail_base_paths)
+}
+
+fn ensure_custom_ability_text_paths(
+    dat_context: &DatContext,
+    project_root: &Path,
+) -> Result<AbilityTextPaths, AppError> {
+    let (_, relative_paths) = ability_editor_relative_paths(dat_context)?;
+    let relative_paths = [
+        relative_paths.ability_names_en,
+        relative_paths.ability_names_jp,
+        relative_paths.ability_descriptions_en,
+        relative_paths.ability_descriptions_jp,
+    ];
+
+    for relative_path in &relative_paths {
+        let destination_path = custom_path(project_root, &relative_path.to_string_lossy());
+        if destination_path.is_file() {
+            continue;
+        }
+
+        let source_path = retail_base_path(project_root, &relative_path.to_string_lossy());
+        let source_path = if source_path.is_file() {
+            source_path
+        } else {
+            dat_context.ffxi_path.join(relative_path)
+        };
+
+        if let Some(parent) = destination_path.parent() {
+            fs::create_dir_all(parent).map_err(anyhow::Error::from)?;
+        }
+        fs::copy(source_path, destination_path).map_err(anyhow::Error::from)?;
+    }
+
+    ability_editor_text_paths_at_root(dat_context, &custom_root(project_root))
+}
+
 #[tauri::command]
 pub async fn copy_spell_dat_to_project(state: AppState<'_>) -> Result<String, AppError> {
     let (dat_context, project_root) = {
@@ -604,7 +746,8 @@ pub async fn reset_spell_dat_to_retail_base(state: AppState<'_>) -> Result<Strin
     };
 
     let (data_menu_relative, text_relative_paths) = spell_editor_relative_paths(&dat_context)?;
-    let data_menu_path = copy_retail_base_to_custom(&data_menu_relative, &project_root)?;
+    let data_menu_path =
+        reset_data_menu_section_to_retail_base(&data_menu_relative, &project_root, "Mgc_")?;
 
     for relative_path in [
         text_relative_paths.spell_names_en,
@@ -649,6 +792,108 @@ pub async fn is_spell_dat_made_in_project(state: AppState<'_>) -> Result<bool, A
                 .is_file()
             && retail_base_root(&project_root)
                 .join(text_relative_paths.spell_descriptions_jp)
+                .is_file(),
+    )
+}
+
+#[tauri::command]
+pub async fn copy_ability_dat_to_project(state: AppState<'_>) -> Result<String, AppError> {
+    let (dat_context, project_root) = {
+        let state = state.read();
+        (
+            state
+                .dat_context
+                .clone()
+                .ok_or(anyhow!("No DAT context."))?,
+            state
+                .project_path
+                .clone()
+                .ok_or(anyhow!("No project folder selected."))?,
+        )
+    };
+
+    let (data_menu_relative, text_relative_paths) = ability_editor_relative_paths(&dat_context)?;
+    let copied_path = copy_dat_to_output_root(
+        dat_context.ffxi_path.join(data_menu_relative),
+        retail_base_root(&project_root),
+    )?;
+    for relative_path in [
+        text_relative_paths.ability_names_en,
+        text_relative_paths.ability_names_jp,
+        text_relative_paths.ability_descriptions_en,
+        text_relative_paths.ability_descriptions_jp,
+    ] {
+        copy_dat_to_output_root(
+            dat_context.ffxi_path.join(relative_path),
+            retail_base_root(&project_root),
+        )?;
+    }
+    Ok(copied_path.display().to_string())
+}
+
+#[tauri::command]
+pub async fn reset_ability_dat_to_retail_base(state: AppState<'_>) -> Result<String, AppError> {
+    let (dat_context, project_root) = {
+        let state = state.read();
+        (
+            state
+                .dat_context
+                .clone()
+                .ok_or(anyhow!("No DAT context."))?,
+            state
+                .project_path
+                .clone()
+                .ok_or(anyhow!("No project folder selected."))?,
+        )
+    };
+
+    let (data_menu_relative, text_relative_paths) = ability_editor_relative_paths(&dat_context)?;
+    let data_menu_path =
+        reset_data_menu_section_to_retail_base(&data_menu_relative, &project_root, "Comm")?;
+
+    for relative_path in [
+        text_relative_paths.ability_names_en,
+        text_relative_paths.ability_names_jp,
+        text_relative_paths.ability_descriptions_en,
+        text_relative_paths.ability_descriptions_jp,
+    ] {
+        copy_retail_base_to_custom(&relative_path.to_string_lossy(), &project_root)?;
+    }
+
+    Ok(data_menu_path.display().to_string())
+}
+
+#[tauri::command]
+pub async fn is_ability_dat_made_in_project(state: AppState<'_>) -> Result<bool, AppError> {
+    let project_root = {
+        let state = state.read();
+        state
+            .project_path
+            .clone()
+            .ok_or(anyhow!("No project folder selected."))?
+    };
+
+    let dat_context = {
+        let state = state.read();
+        state
+            .dat_context
+            .clone()
+            .ok_or(anyhow!("No DAT context."))?
+    };
+    let (data_menu_relative, text_relative_paths) = ability_editor_relative_paths(&dat_context)?;
+    Ok(
+        retail_base_path(&project_root, &data_menu_relative).is_file()
+            && retail_base_root(&project_root)
+                .join(text_relative_paths.ability_names_en)
+                .is_file()
+            && retail_base_root(&project_root)
+                .join(text_relative_paths.ability_names_jp)
+                .is_file()
+            && retail_base_root(&project_root)
+                .join(text_relative_paths.ability_descriptions_en)
+                .is_file()
+            && retail_base_root(&project_root)
+                .join(text_relative_paths.ability_descriptions_jp)
                 .is_file(),
     )
 }
@@ -1175,6 +1420,30 @@ pub async fn compare_spell_files(
 }
 
 #[tauri::command]
+pub async fn compare_ability_files(
+    old_path: PathBuf,
+    new_path: PathBuf,
+    state: AppState<'_>,
+) -> Result<AbilityDiffResult, AppError> {
+    let ability_text_paths = {
+        let state = state.read();
+        match (state.dat_context.as_ref(), state.project_path.as_ref()) {
+            (Some(dat_context), Some(project_root)) => Some(ability_editor_source_text_paths(
+                dat_context,
+                project_root,
+                &new_path,
+            )?),
+            _ => None,
+        }
+    };
+    Ok(entity_diff::compare_ability_files_with_text_paths(
+        old_path,
+        new_path,
+        ability_text_paths,
+    )?)
+}
+
+#[tauri::command]
 pub async fn save_entity_name_diff(
     rows: Vec<EntityDiffRow>,
     out_yaml_path: PathBuf,
@@ -1337,6 +1606,34 @@ pub async fn save_spell_diff(
 }
 
 #[tauri::command]
+pub async fn save_ability_diff(
+    old_path: PathBuf,
+    new_path: PathBuf,
+    rows: Vec<AbilityDiffRow>,
+    out_yaml_path: PathBuf,
+    out_dat_path: Option<PathBuf>,
+    state: AppState<'_>,
+) -> Result<AbilityDiffSaveResult, AppError> {
+    let ability_text_paths = {
+        let state = state.read();
+        match (state.dat_context.as_ref(), state.project_path.as_ref()) {
+            (Some(dat_context), Some(project_root)) => {
+                Some(ensure_custom_ability_text_paths(dat_context, project_root)?)
+            }
+            _ => None,
+        }
+    };
+    Ok(entity_diff::save_ability_diff_with_text_paths(
+        old_path,
+        new_path,
+        rows,
+        out_yaml_path,
+        out_dat_path,
+        ability_text_paths,
+    )?)
+}
+
+#[tauri::command]
 pub async fn compare_entity_name_folders(
     custom_dir: PathBuf,
     old_retail_dir: PathBuf,
@@ -1443,15 +1740,22 @@ fn merge_descriptor_names(
 ) {
     for descriptor_info in descriptors {
         let descriptor = descriptor_info.descriptor;
-        let Ok(dat_path) = descriptor.use_dat_with(RelativeDatPathResolver { dat_context }) else {
-            continue;
-        };
-
         let Some(name) = descriptor_type_name(descriptor) else {
             continue;
         };
 
-        names_by_path.insert(normalize_compare_key_from_str(&dat_path), name);
+        if let Ok(dat_path) = descriptor.use_dat_with(RelativeDatPathResolver { dat_context }) {
+            names_by_path.insert(normalize_compare_key_from_str(&dat_path), name.clone());
+        }
+
+        if descriptor.has_jp_dat() {
+            if let Ok(jp_dat_path) = descriptor.use_jp_dat_with(RelativeDatPathResolver { dat_context }) {
+                names_by_path.insert(
+                    normalize_compare_key_from_str(&jp_dat_path),
+                    format!("{name} (JP)"),
+                );
+            }
+        }
     }
 }
 

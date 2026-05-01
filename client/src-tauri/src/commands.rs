@@ -25,6 +25,7 @@ use crate::{
         self, AbilityDiffResult, AbilityDiffRow, AbilityDiffSaveResult, AbilityTextPaths,
         DiffToolKind, EntityDiffResult, EntityDiffRow, EntityDiffSaveResult, FolderDiffResult,
         ItemEditorRow, SpellDiffResult, SpellDiffRow, SpellDiffSaveResult, SpellTextPaths,
+        ZoneEditorRow,
     },
     errors::AppError,
     state::{AppState, FileNotification},
@@ -51,6 +52,23 @@ pub struct ItemEditorSaveResult {
     pub english_out_dat_path: Option<String>,
     pub japanese_out_yaml_path: Option<String>,
     pub japanese_out_dat_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ZoneEditorLoadResult {
+    pub zone_id: ZoneId,
+    pub zone_name: String,
+    pub source_path: String,
+    pub output_yaml_path: String,
+    pub output_dat_path: String,
+    pub rows: Vec<ZoneEditorRow>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ZoneEditorSaveResult {
+    pub written_count: usize,
+    pub out_yaml_path: String,
+    pub out_dat_path: String,
 }
 
 const RETAIL_BASE_DIR: &str = "Retail Base";
@@ -452,6 +470,95 @@ pub async fn are_all_item_dats_made_in_project(state: AppState<'_>) -> Result<bo
     }
 
     Ok(true)
+}
+
+#[tauri::command]
+pub async fn copy_zone_entity_dat_to_project(
+    zone_id: ZoneId,
+    state: AppState<'_>,
+) -> Result<String, AppError> {
+    let (dat_context, project_root) = {
+        let state = state.read();
+        (
+            state
+                .dat_context
+                .clone()
+                .ok_or(anyhow!("No DAT context."))?,
+            state
+                .project_path
+                .clone()
+                .ok_or(anyhow!("No project folder selected."))?,
+        )
+    };
+
+    let relative_path = resolve_descriptor_relative_path(
+        DatDescriptor::EntityNames(zone_id),
+        DatLanguage::English,
+        &dat_context,
+    )?;
+    let copied_path = copy_dat_to_output_root(
+        dat_context.ffxi_path.join(relative_path),
+        retail_base_root(&project_root),
+    )?;
+
+    Ok(copied_path.display().to_string())
+}
+
+#[tauri::command]
+pub async fn reset_zone_entity_dat_to_retail_base(
+    zone_id: ZoneId,
+    state: AppState<'_>,
+) -> Result<String, AppError> {
+    let (dat_context, project_root) = {
+        let state = state.read();
+        (
+            state
+                .dat_context
+                .clone()
+                .ok_or(anyhow!("No DAT context."))?,
+            state
+                .project_path
+                .clone()
+                .ok_or(anyhow!("No project folder selected."))?,
+        )
+    };
+
+    let relative_path = resolve_descriptor_relative_path(
+        DatDescriptor::EntityNames(zone_id),
+        DatLanguage::English,
+        &dat_context,
+    )?;
+    let reset_path = copy_retail_base_to_custom(&relative_path, &project_root)?;
+
+    Ok(reset_path.display().to_string())
+}
+
+#[tauri::command]
+pub async fn is_zone_entity_dat_made_in_project(
+    zone_id: ZoneId,
+    state: AppState<'_>,
+) -> Result<bool, AppError> {
+    let (dat_context, project_root) = {
+        let state = state.read();
+        (
+            state
+                .dat_context
+                .clone()
+                .ok_or(anyhow!("No DAT context."))?,
+            state
+                .project_path
+                .clone()
+                .ok_or(anyhow!("No project folder selected."))?,
+        )
+    };
+
+    let relative_path = resolve_descriptor_relative_path(
+        DatDescriptor::EntityNames(zone_id),
+        DatLanguage::English,
+        &dat_context,
+    )?;
+
+    Ok(retail_base_path(&project_root, &relative_path).is_file())
 }
 
 fn spell_editor_relative_paths(
@@ -1396,6 +1503,50 @@ pub async fn load_item_editor_data(
 }
 
 #[tauri::command]
+pub async fn load_zone_editor_data(
+    zone_id: ZoneId,
+    state: AppState<'_>,
+) -> Result<ZoneEditorLoadResult, AppError> {
+    let (dat_context, project_root) = {
+        let state = state.read();
+        (
+            state
+                .dat_context
+                .clone()
+                .ok_or(anyhow!("No DAT context."))?,
+            state
+                .project_path
+                .clone()
+                .ok_or(anyhow!("No project folder selected."))?,
+        )
+    };
+
+    let relative_path = resolve_descriptor_relative_path(
+        DatDescriptor::EntityNames(zone_id),
+        DatLanguage::English,
+        &dat_context,
+    )?;
+    let source_path = required_project_editor_source_path(&relative_path, &project_root)?;
+    let (output_yaml_path, output_dat_path) =
+        build_output_paths_for_relative_path(&relative_path, &project_root)?;
+    let rows = entity_diff::load_zone_editor_rows(source_path.clone())?;
+    let zone_name = dat_context
+        .zone_id_to_name
+        .get(&zone_id)
+        .map(|zone| zone.display_name.clone())
+        .unwrap_or_else(|| format!("Zone {zone_id}"));
+
+    Ok(ZoneEditorLoadResult {
+        zone_id,
+        zone_name,
+        source_path: source_path.display().to_string(),
+        output_yaml_path: output_yaml_path.display().to_string(),
+        output_dat_path: output_dat_path.display().to_string(),
+        rows,
+    })
+}
+
+#[tauri::command]
 pub async fn compare_spell_files(
     old_path: PathBuf,
     new_path: PathBuf,
@@ -1578,6 +1729,47 @@ pub async fn save_item_editor_data(
 }
 
 #[tauri::command]
+pub async fn save_zone_editor_data(
+    zone_id: ZoneId,
+    rows: Vec<ZoneEditorRow>,
+    state: AppState<'_>,
+) -> Result<ZoneEditorSaveResult, AppError> {
+    let (dat_context, project_root) = {
+        let state = state.read();
+        (
+            state
+                .dat_context
+                .clone()
+                .ok_or(anyhow!("No DAT context."))?,
+            state
+                .project_path
+                .clone()
+                .ok_or(anyhow!("No project folder selected."))?,
+        )
+    };
+
+    let relative_path = resolve_descriptor_relative_path(
+        DatDescriptor::EntityNames(zone_id),
+        DatLanguage::English,
+        &dat_context,
+    )?;
+    let (output_yaml_path, output_dat_path) =
+        build_output_paths_for_relative_path(&relative_path, &project_root)?;
+
+    let written_count = entity_diff::save_zone_editor_rows(
+        rows,
+        output_yaml_path.clone(),
+        output_dat_path.clone(),
+    )?;
+
+    Ok(ZoneEditorSaveResult {
+        written_count,
+        out_yaml_path: output_yaml_path.display().to_string(),
+        out_dat_path: output_dat_path.display().to_string(),
+    })
+}
+
+#[tauri::command]
 pub async fn save_spell_diff(
     old_path: PathBuf,
     new_path: PathBuf,
@@ -1749,7 +1941,9 @@ fn merge_descriptor_names(
         }
 
         if descriptor.has_jp_dat() {
-            if let Ok(jp_dat_path) = descriptor.use_jp_dat_with(RelativeDatPathResolver { dat_context }) {
+            if let Ok(jp_dat_path) =
+                descriptor.use_jp_dat_with(RelativeDatPathResolver { dat_context })
+            {
                 names_by_path.insert(
                     normalize_compare_key_from_str(&jp_dat_path),
                     format!("{name} (JP)"),

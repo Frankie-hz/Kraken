@@ -68,6 +68,100 @@ pub struct EntityDiffResult {
     pub changed_count: usize,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct ItemDiffValues {
+    id: Option<u32>,
+    stack_size: Option<u32>,
+    level: Option<u32>,
+    item_type: Option<String>,
+    shield_size: Option<u32>,
+    max_charges: Option<u32>,
+    casting_time: Option<u32>,
+    use_delay: Option<u32>,
+    reuse_delay: Option<u32>,
+    valid_targets: Option<Vec<String>>,
+    slots: Option<Vec<String>>,
+    icon_bytes: Option<String>,
+    flags: Option<Vec<String>>,
+    jobs: Option<Vec<String>>,
+    en_name: Option<String>,
+    en_description: Option<String>,
+    jp_name: Option<String>,
+    jp_description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ItemDiffRow {
+    pub row: u32,
+    pub old_id: Option<u32>,
+    pub new_id: Option<u32>,
+    pub retail_id: Option<u32>,
+    pub old_stack_size: Option<u32>,
+    pub new_stack_size: Option<u32>,
+    pub retail_stack_size: Option<u32>,
+    pub old_level: Option<u32>,
+    pub new_level: Option<u32>,
+    pub retail_level: Option<u32>,
+    pub old_item_type: Option<String>,
+    pub new_item_type: Option<String>,
+    pub retail_item_type: Option<String>,
+    pub old_shield_size: Option<u32>,
+    pub new_shield_size: Option<u32>,
+    pub retail_shield_size: Option<u32>,
+    pub old_max_charges: Option<u32>,
+    pub new_max_charges: Option<u32>,
+    pub retail_max_charges: Option<u32>,
+    pub old_casting_time: Option<u32>,
+    pub new_casting_time: Option<u32>,
+    pub retail_casting_time: Option<u32>,
+    pub old_use_delay: Option<u32>,
+    pub new_use_delay: Option<u32>,
+    pub retail_use_delay: Option<u32>,
+    pub old_reuse_delay: Option<u32>,
+    pub new_reuse_delay: Option<u32>,
+    pub retail_reuse_delay: Option<u32>,
+    pub old_valid_targets: Option<Vec<String>>,
+    pub new_valid_targets: Option<Vec<String>>,
+    pub retail_valid_targets: Option<Vec<String>>,
+    pub old_slots: Option<Vec<String>>,
+    pub new_slots: Option<Vec<String>>,
+    pub retail_slots: Option<Vec<String>>,
+    pub old_icon_bytes: Option<String>,
+    pub new_icon_bytes: Option<String>,
+    pub retail_icon_bytes: Option<String>,
+    pub old_flags: Option<Vec<String>>,
+    pub new_flags: Option<Vec<String>>,
+    pub retail_flags: Option<Vec<String>>,
+    pub old_jobs: Option<Vec<String>>,
+    pub new_jobs: Option<Vec<String>>,
+    pub retail_jobs: Option<Vec<String>>,
+    pub old_en_name: Option<String>,
+    pub new_en_name: Option<String>,
+    pub retail_en_name: Option<String>,
+    pub old_en_description: Option<String>,
+    pub new_en_description: Option<String>,
+    pub retail_en_description: Option<String>,
+    pub old_jp_name: Option<String>,
+    pub new_jp_name: Option<String>,
+    pub retail_jp_name: Option<String>,
+    pub old_jp_description: Option<String>,
+    pub new_jp_description: Option<String>,
+    pub retail_jp_description: Option<String>,
+    pub has_japanese: bool,
+    pub has_retail_entry: bool,
+    pub choice: EntityDiffChoice,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ItemDiffResult {
+    pub rows: Vec<ItemDiffRow>,
+    pub old_count: usize,
+    pub new_count: usize,
+    pub changed_count: usize,
+    pub old_japanese_path: Option<String>,
+    pub new_japanese_path: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ItemEditorRow {
     pub row: u32,
@@ -221,6 +315,17 @@ pub struct EntityDiffSaveResult {
     pub kept_new_count: usize,
     pub out_yaml_path: String,
     pub out_dat_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ItemDiffSaveResult {
+    pub written_count: usize,
+    pub kept_old_count: usize,
+    pub kept_new_count: usize,
+    pub out_yaml_path: String,
+    pub out_dat_path: Option<String>,
+    pub japanese_out_yaml_path: Option<String>,
+    pub japanese_out_dat_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -517,9 +622,163 @@ pub fn save_zone_editor_rows(
     Ok(merged.names.len())
 }
 
-pub fn compare_item_files(old_path: PathBuf, new_path: PathBuf) -> Result<EntityDiffResult> {
+fn item_diff_values(
+    english_item: Option<&Value>,
+    japanese_item: Option<&Value>,
+) -> ItemDiffValues {
+    ItemDiffValues {
+        id: english_item
+            .and_then(get_item_id)
+            .or_else(|| japanese_item.and_then(get_item_id)),
+        stack_size: english_item
+            .and_then(get_item_stack_size)
+            .or_else(|| japanese_item.and_then(get_item_stack_size)),
+        level: english_item
+            .and_then(get_item_level)
+            .or_else(|| japanese_item.and_then(get_item_level)),
+        item_type: english_item
+            .and_then(get_item_type)
+            .or_else(|| japanese_item.and_then(get_item_type)),
+        shield_size: english_item
+            .and_then(get_item_shield_size)
+            .or_else(|| japanese_item.and_then(get_item_shield_size)),
+        max_charges: english_item
+            .and_then(get_item_max_charges)
+            .or_else(|| japanese_item.and_then(get_item_max_charges)),
+        casting_time: english_item
+            .and_then(get_item_casting_time)
+            .or_else(|| japanese_item.and_then(get_item_casting_time)),
+        use_delay: english_item
+            .and_then(get_item_use_delay)
+            .or_else(|| japanese_item.and_then(get_item_use_delay)),
+        reuse_delay: english_item
+            .and_then(get_item_reuse_delay)
+            .or_else(|| japanese_item.and_then(get_item_reuse_delay)),
+        valid_targets: english_item
+            .and_then(get_item_valid_targets)
+            .or_else(|| japanese_item.and_then(get_item_valid_targets)),
+        slots: english_item
+            .and_then(get_item_slots)
+            .or_else(|| japanese_item.and_then(get_item_slots)),
+        icon_bytes: english_item
+            .and_then(get_item_icon_bytes)
+            .or_else(|| japanese_item.and_then(get_item_icon_bytes)),
+        flags: english_item
+            .and_then(get_item_flags)
+            .or_else(|| japanese_item.and_then(get_item_flags)),
+        jobs: english_item
+            .and_then(get_item_jobs)
+            .or_else(|| japanese_item.and_then(get_item_jobs)),
+        en_name: english_item.and_then(get_item_name),
+        en_description: english_item.and_then(get_item_description),
+        jp_name: japanese_item.and_then(get_item_name),
+        jp_description: japanese_item.and_then(get_item_description),
+    }
+}
+
+fn item_diff_values_match_current_identity(
+    current: &ItemDiffValues,
+    retail: &ItemDiffValues,
+) -> bool {
+    current.stack_size == retail.stack_size
+        && current.level == retail.level
+        && current.item_type == retail.item_type
+        && current.shield_size == retail.shield_size
+        && current.max_charges == retail.max_charges
+        && current.casting_time == retail.casting_time
+        && current.use_delay == retail.use_delay
+        && current.reuse_delay == retail.reuse_delay
+        && current.valid_targets == retail.valid_targets
+        && current.slots == retail.slots
+        && current.icon_bytes == retail.icon_bytes
+        && current.flags == retail.flags
+        && current.jobs == retail.jobs
+        && current.en_description == retail.en_description
+        && current.jp_name == retail.jp_name
+        && current.jp_description == retail.jp_description
+}
+
+fn item_diff_row_from_values(
+    row: u32,
+    old: &ItemDiffValues,
+    retail: &ItemDiffValues,
+    target: &ItemDiffValues,
+    has_japanese: bool,
+    has_retail_entry: bool,
+    choice: EntityDiffChoice,
+) -> ItemDiffRow {
+    ItemDiffRow {
+        row,
+        old_id: old.id,
+        new_id: target.id,
+        retail_id: retail.id,
+        old_stack_size: old.stack_size,
+        new_stack_size: target.stack_size,
+        retail_stack_size: retail.stack_size,
+        old_level: old.level,
+        new_level: target.level,
+        retail_level: retail.level,
+        old_item_type: old.item_type.clone(),
+        new_item_type: target.item_type.clone(),
+        retail_item_type: retail.item_type.clone(),
+        old_shield_size: old.shield_size,
+        new_shield_size: target.shield_size,
+        retail_shield_size: retail.shield_size,
+        old_max_charges: old.max_charges,
+        new_max_charges: target.max_charges,
+        retail_max_charges: retail.max_charges,
+        old_casting_time: old.casting_time,
+        new_casting_time: target.casting_time,
+        retail_casting_time: retail.casting_time,
+        old_use_delay: old.use_delay,
+        new_use_delay: target.use_delay,
+        retail_use_delay: retail.use_delay,
+        old_reuse_delay: old.reuse_delay,
+        new_reuse_delay: target.reuse_delay,
+        retail_reuse_delay: retail.reuse_delay,
+        old_valid_targets: old.valid_targets.clone(),
+        new_valid_targets: target.valid_targets.clone(),
+        retail_valid_targets: retail.valid_targets.clone(),
+        old_slots: old.slots.clone(),
+        new_slots: target.slots.clone(),
+        retail_slots: retail.slots.clone(),
+        old_icon_bytes: old.icon_bytes.clone(),
+        new_icon_bytes: target.icon_bytes.clone(),
+        retail_icon_bytes: retail.icon_bytes.clone(),
+        old_flags: old.flags.clone(),
+        new_flags: target.flags.clone(),
+        retail_flags: retail.flags.clone(),
+        old_jobs: old.jobs.clone(),
+        new_jobs: target.jobs.clone(),
+        retail_jobs: retail.jobs.clone(),
+        old_en_name: old.en_name.clone(),
+        new_en_name: target.en_name.clone(),
+        retail_en_name: retail.en_name.clone(),
+        old_en_description: old.en_description.clone(),
+        new_en_description: target.en_description.clone(),
+        retail_en_description: retail.en_description.clone(),
+        old_jp_name: old.jp_name.clone(),
+        new_jp_name: target.jp_name.clone(),
+        retail_jp_name: retail.jp_name.clone(),
+        old_jp_description: old.jp_description.clone(),
+        new_jp_description: target.jp_description.clone(),
+        retail_jp_description: retail.jp_description.clone(),
+        has_japanese,
+        has_retail_entry,
+        choice,
+    }
+}
+
+pub fn compare_item_files(
+    old_path: PathBuf,
+    new_path: PathBuf,
+    old_japanese_path: Option<PathBuf>,
+    new_japanese_path: Option<PathBuf>,
+) -> Result<ItemDiffResult> {
     let old_data = load_item_table(&old_path)?;
     let new_data = load_item_table(&new_path)?;
+    let old_japanese_data = old_japanese_path.as_ref().map(load_item_table).transpose()?;
+    let new_japanese_data = new_japanese_path.as_ref().map(load_item_table).transpose()?;
 
     let old_entries = align_entries_from_items(&old_data.items);
     let new_entries = align_entries_from_items(&new_data.items);
@@ -535,126 +794,162 @@ pub fn compare_item_files(old_path: PathBuf, new_path: PathBuf) -> Result<Entity
                 AlignOp::Pair(old_idx, new_idx) => {
                     let old_item = &old_data.items[*old_idx];
                     let new_item = &new_data.items[*new_idx];
+                    let old_japanese_item = old_japanese_data
+                        .as_ref()
+                        .and_then(|data| data.items.get(*old_idx));
+                    let new_japanese_item = new_japanese_data
+                        .as_ref()
+                        .and_then(|data| data.items.get(*new_idx));
+                    let old_values = item_diff_values(Some(old_item), old_japanese_item);
+                    let retail_values = item_diff_values(Some(new_item), new_japanese_item);
 
-                    let old_id = get_item_id(old_item);
-                    let old_name = get_item_name(old_item);
-                    let old_stack_size = get_item_stack_size(old_item);
-                    let old_flags = get_item_flags(old_item);
-                    let old_jobs = get_item_jobs(old_item);
-                    let old_description = get_item_description(old_item);
-                    let new_id = get_item_id(new_item);
-                    let new_name = get_item_name(new_item);
-                    let new_stack_size = get_item_stack_size(new_item);
-                    let new_flags = get_item_flags(new_item);
-                    let new_jobs = get_item_jobs(new_item);
-                    let new_description = get_item_description(new_item);
-
-                    let is_changed = old_id != new_id
-                        || old_name != new_name
-                        || old_stack_size != new_stack_size
-                        || old_flags != new_flags
-                        || old_jobs != new_jobs
-                        || old_description != new_description;
-                    if is_changed {
+                    if !item_diff_values_match_current_identity(&old_values, &retail_values) {
                         changed_count += 1;
                     }
 
-                    EntityDiffRow {
-                        row: idx as u32,
-                        old_id,
-                        old_name,
-                        old_stack_size,
-                        old_flags,
-                        old_jobs,
-                        old_description,
-                        new_id,
-                        new_name,
-                        new_stack_size,
-                        new_flags,
-                        new_jobs,
-                        new_description,
-                        target_id: new_id.or(old_id),
-                        choice: EntityDiffChoice::New,
-                    }
+                    item_diff_row_from_values(
+                        idx as u32,
+                        &old_values,
+                        &retail_values,
+                        &old_values,
+                        old_japanese_item.is_some() || new_japanese_item.is_some(),
+                        true,
+                        EntityDiffChoice::Old,
+                    )
                 }
                 AlignOp::Delete(old_idx) => {
                     let old_item = &old_data.items[*old_idx];
-                    let old_id = get_item_id(old_item);
-                    let old_name = get_item_name(old_item);
-                    let old_stack_size = get_item_stack_size(old_item);
-                    let old_flags = get_item_flags(old_item);
-                    let old_jobs = get_item_jobs(old_item);
-                    let old_description = get_item_description(old_item);
+                    let old_japanese_item = old_japanese_data
+                        .as_ref()
+                        .and_then(|data| data.items.get(*old_idx));
+                    let old_values = item_diff_values(Some(old_item), old_japanese_item);
+                    let retail_values = item_diff_values(None, None);
                     changed_count += 1;
 
-                    EntityDiffRow {
-                        row: idx as u32,
-                        old_id,
-                        old_name,
-                        old_stack_size,
-                        old_flags,
-                        old_jobs,
-                        old_description,
-                        new_id: None,
-                        new_name: None,
-                        new_stack_size: None,
-                        new_flags: None,
-                        new_jobs: None,
-                        new_description: None,
-                        target_id: old_id,
-                        choice: EntityDiffChoice::Old,
-                    }
+                    item_diff_row_from_values(
+                        idx as u32,
+                        &old_values,
+                        &retail_values,
+                        &old_values,
+                        old_japanese_item.is_some(),
+                        false,
+                        EntityDiffChoice::Old,
+                    )
                 }
                 AlignOp::Insert(new_idx) => {
                     let new_item = &new_data.items[*new_idx];
-                    let new_id = get_item_id(new_item);
-                    let new_name = get_item_name(new_item);
-                    let new_stack_size = get_item_stack_size(new_item);
-                    let new_flags = get_item_flags(new_item);
-                    let new_jobs = get_item_jobs(new_item);
-                    let new_description = get_item_description(new_item);
+                    let new_japanese_item = new_japanese_data
+                        .as_ref()
+                        .and_then(|data| data.items.get(*new_idx));
+                    let old_values = item_diff_values(None, None);
+                    let retail_values = item_diff_values(Some(new_item), new_japanese_item);
                     changed_count += 1;
 
-                    EntityDiffRow {
-                        row: idx as u32,
-                        old_id: None,
-                        old_name: None,
-                        old_stack_size: None,
-                        old_flags: None,
-                        old_jobs: None,
-                        old_description: None,
-                        new_id,
-                        new_name,
-                        new_stack_size,
-                        new_flags,
-                        new_jobs,
-                        new_description,
-                        target_id: new_id,
-                        choice: EntityDiffChoice::New,
-                    }
+                    item_diff_row_from_values(
+                        idx as u32,
+                        &old_values,
+                        &retail_values,
+                        &retail_values,
+                        new_japanese_item.is_some(),
+                        true,
+                        EntityDiffChoice::New,
+                    )
                 }
             };
             row
         })
         .collect::<Vec<_>>();
 
-    Ok(EntityDiffResult {
+    Ok(ItemDiffResult {
         rows,
         old_count: old_data.items.len(),
         new_count: new_data.items.len(),
         changed_count,
+        old_japanese_path: old_japanese_path
+            .as_ref()
+            .map(|path| path.display().to_string()),
+        new_japanese_path: new_japanese_path
+            .as_ref()
+            .map(|path| path.display().to_string()),
     })
+}
+
+fn item_editor_row_from_item_diff(row: &ItemDiffRow) -> ItemEditorRow {
+    ItemEditorRow {
+        row: row.row,
+        old_id: row.old_id,
+        new_id: row.new_id,
+        old_stack_size: row.old_stack_size,
+        new_stack_size: row.new_stack_size,
+        old_level: row.old_level,
+        new_level: row.new_level,
+        old_item_type: row.old_item_type.clone(),
+        new_item_type: row.new_item_type.clone(),
+        old_shield_size: row.old_shield_size,
+        new_shield_size: row.new_shield_size,
+        old_max_charges: row.old_max_charges,
+        new_max_charges: row.new_max_charges,
+        old_casting_time: row.old_casting_time,
+        new_casting_time: row.new_casting_time,
+        old_use_delay: row.old_use_delay,
+        new_use_delay: row.new_use_delay,
+        old_reuse_delay: row.old_reuse_delay,
+        new_reuse_delay: row.new_reuse_delay,
+        old_valid_targets: row.old_valid_targets.clone(),
+        new_valid_targets: row.new_valid_targets.clone(),
+        old_slots: row.old_slots.clone(),
+        new_slots: row.new_slots.clone(),
+        old_weapon_damage: None,
+        new_weapon_damage: None,
+        old_weapon_delay: None,
+        new_weapon_delay: None,
+        old_weapon_dps: None,
+        new_weapon_dps: None,
+        old_weapon_skill_type: None,
+        new_weapon_skill_type: None,
+        old_weapon_jug_size: None,
+        new_weapon_jug_size: None,
+        old_weapon_emote: None,
+        new_weapon_emote: None,
+        old_icon_bytes: row.old_icon_bytes.clone(),
+        new_icon_bytes: row.new_icon_bytes.clone(),
+        old_flags: row.old_flags.clone(),
+        new_flags: row.new_flags.clone(),
+        old_jobs: row.old_jobs.clone(),
+        new_jobs: row.new_jobs.clone(),
+        old_en_name: row.old_en_name.clone(),
+        new_en_name: row.new_en_name.clone(),
+        old_en_article_type: None,
+        new_en_article_type: None,
+        old_en_singular_name: None,
+        new_en_singular_name: None,
+        old_en_plural_name: None,
+        new_en_plural_name: None,
+        old_en_description: row.old_en_description.clone(),
+        new_en_description: row.new_en_description.clone(),
+        old_jp_name: row.old_jp_name.clone(),
+        new_jp_name: row.new_jp_name.clone(),
+        old_jp_description: row.old_jp_description.clone(),
+        new_jp_description: row.new_jp_description.clone(),
+        has_japanese: row.has_japanese,
+    }
 }
 
 pub fn save_item_diff(
     old_path: PathBuf,
     new_path: PathBuf,
-    rows: Vec<EntityDiffRow>,
+    old_japanese_path: Option<PathBuf>,
+    new_japanese_path: Option<PathBuf>,
+    rows: Vec<ItemDiffRow>,
     out_yaml_path: PathBuf,
     out_dat_path: Option<PathBuf>,
-) -> Result<EntityDiffSaveResult> {
+    japanese_out_yaml_path: Option<PathBuf>,
+    japanese_out_dat_path: Option<PathBuf>,
+) -> Result<ItemDiffSaveResult> {
     let old_data = load_item_table(&old_path)?;
     let new_data = load_item_table(&new_path)?;
+    let old_japanese_data = old_japanese_path.as_ref().map(load_item_table).transpose()?;
+    let new_japanese_data = new_japanese_path.as_ref().map(load_item_table).transpose()?;
 
     let old_entries = align_entries_from_items(&old_data.items);
     let new_entries = align_entries_from_items(&new_data.items);
@@ -666,6 +961,7 @@ pub fn save_item_diff(
         .collect::<HashMap<_, _>>();
 
     let mut merged_items = Vec::with_capacity(operations.len());
+    let mut merged_japanese_items = Vec::with_capacity(operations.len());
     let mut kept_old_count = 0usize;
     let mut kept_new_count = 0usize;
 
@@ -685,87 +981,50 @@ pub fn save_item_diff(
             AlignOp::Delete(_) => None,
         };
 
-        let requested_choice = row.map(|row| row.choice).unwrap_or_else(|| match op {
-            AlignOp::Delete(_) => EntityDiffChoice::Old,
-            _ => EntityDiffChoice::New,
-        });
-
-        let (mut selected_item, effective_choice) = match requested_choice {
-            EntityDiffChoice::Old => {
-                if let Some(item) = old_item {
-                    (item, EntityDiffChoice::Old)
-                } else if let Some(item) = new_item {
-                    (item, EntityDiffChoice::New)
-                } else {
-                    continue;
-                }
-            }
-            EntityDiffChoice::New => {
-                if let Some(item) = new_item {
-                    (item, EntityDiffChoice::New)
-                } else if let Some(item) = old_item {
-                    (item, EntityDiffChoice::Old)
-                } else {
-                    continue;
-                }
-            }
+        let Some(mut selected_item) = old_item.or(new_item) else {
+            continue;
         };
 
-        let chosen_id = row
-            .and_then(|row| match effective_choice {
-                EntityDiffChoice::Old => row.old_id,
-                EntityDiffChoice::New => row.new_id,
-            })
-            .or_else(|| get_item_id(&selected_item));
-        if let Some(chosen_id) = chosen_id {
-            set_item_id(&mut selected_item, chosen_id);
-        }
+        if let Some(row) = row {
+            let editor_row = item_editor_row_from_item_diff(row);
+            apply_common_item_editor_updates(&mut selected_item, &editor_row);
+            apply_english_item_editor_updates(&mut selected_item, &editor_row);
 
-        let chosen_name = row.and_then(|row| match effective_choice {
-            EntityDiffChoice::Old => row.old_name.clone(),
-            EntityDiffChoice::New => row.new_name.clone(),
-        });
-        if let Some(name) = chosen_name {
-            set_item_name(&mut selected_item, name);
-        }
-
-        let chosen_stack_size = row.and_then(|row| match effective_choice {
-            EntityDiffChoice::Old => row.old_stack_size,
-            EntityDiffChoice::New => row.new_stack_size,
-        });
-        if let Some(stack_size) = chosen_stack_size {
-            set_item_stack_size(&mut selected_item, stack_size);
-        }
-
-        let chosen_flags = row.and_then(|row| match effective_choice {
-            EntityDiffChoice::Old => row.old_flags.clone(),
-            EntityDiffChoice::New => row.new_flags.clone(),
-        });
-        if let Some(flags) = chosen_flags {
-            set_item_flags(&mut selected_item, &flags);
-        }
-
-        let chosen_jobs = row.and_then(|row| match effective_choice {
-            EntityDiffChoice::Old => row.old_jobs.clone(),
-            EntityDiffChoice::New => row.new_jobs.clone(),
-        });
-        if let Some(jobs) = chosen_jobs {
-            set_item_jobs(&mut selected_item, &jobs);
-        }
-
-        let chosen_description = row.and_then(|row| match effective_choice {
-            EntityDiffChoice::Old => row.old_description.clone(),
-            EntityDiffChoice::New => row.new_description.clone(),
-        });
-        if let Some(description) = chosen_description {
-            set_item_description(&mut selected_item, description);
-        }
-
-        match effective_choice {
-            EntityDiffChoice::Old => kept_old_count += 1,
-            EntityDiffChoice::New => kept_new_count += 1,
+            match row.choice {
+                EntityDiffChoice::Old => kept_old_count += 1,
+                EntityDiffChoice::New => kept_new_count += 1,
+            }
+        } else {
+            match op {
+                AlignOp::Delete(_) => kept_old_count += 1,
+                _ => kept_new_count += 1,
+            }
         }
         merged_items.push(selected_item);
+
+        let old_japanese_item = match op {
+            AlignOp::Pair(old_idx, _) | AlignOp::Delete(old_idx) => old_japanese_data
+                .as_ref()
+                .and_then(|data| data.items.get(*old_idx))
+                .cloned(),
+            AlignOp::Insert(_) => None,
+        };
+        let new_japanese_item = match op {
+            AlignOp::Pair(_, new_idx) | AlignOp::Insert(new_idx) => new_japanese_data
+                .as_ref()
+                .and_then(|data| data.items.get(*new_idx))
+                .cloned(),
+            AlignOp::Delete(_) => None,
+        };
+
+        if let Some(mut selected_japanese_item) = old_japanese_item.or(new_japanese_item) {
+            if let Some(row) = row {
+                let editor_row = item_editor_row_from_item_diff(row);
+                apply_common_item_editor_updates(&mut selected_japanese_item, &editor_row);
+                apply_japanese_item_editor_updates(&mut selected_japanese_item, &editor_row);
+            }
+            merged_japanese_items.push(selected_japanese_item);
+        }
     }
 
     let merged = ItemInfoTableYaml {
@@ -796,12 +1055,51 @@ pub fn save_item_diff(
         None
     };
 
-    Ok(EntityDiffSaveResult {
+    let (japanese_out_yaml_path, japanese_out_dat_path) =
+        if let Some(japanese_out_yaml_path) = japanese_out_yaml_path {
+            let merged_japanese = ItemInfoTableYaml {
+                items: merged_japanese_items,
+            };
+            if let Some(parent) = japanese_out_yaml_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let yaml_file = File::create(&japanese_out_yaml_path)?;
+            serde_yaml::to_writer(BufWriter::new(yaml_file), &merged_japanese)?;
+
+            let written_japanese_dat = if let Some(dat_path) = japanese_out_dat_path {
+                if let Some(parent) = dat_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+
+                let value = serde_yaml::to_value(&merged_japanese)?;
+                let dat: ItemInfoTable = serde_yaml::from_value(value)?;
+                let bytes = dat.to_bytes()?;
+                ItemInfoTable::from_bytes(&bytes).map_err(|err| {
+                    anyhow::anyhow!("Generated Japanese item DAT failed verification: {err}")
+                })?;
+                fs::write(&dat_path, bytes)?;
+
+                Some(dat_path.display().to_string())
+            } else {
+                None
+            };
+
+            (
+                Some(japanese_out_yaml_path.display().to_string()),
+                written_japanese_dat,
+            )
+        } else {
+            (None, None)
+        };
+
+    Ok(ItemDiffSaveResult {
         written_count: merged.items.len(),
         kept_old_count,
         kept_new_count,
         out_yaml_path: out_yaml_path.display().to_string(),
         out_dat_path: written_dat,
+        japanese_out_yaml_path,
+        japanese_out_dat_path,
     })
 }
 

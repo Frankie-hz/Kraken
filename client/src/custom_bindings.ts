@@ -263,12 +263,92 @@ export interface EntityDiffResult {
     changed_count: number;
 }
 
+export interface ItemDiffRow {
+    row: number;
+    old_id: number | null;
+    new_id: number | null;
+    retail_id: number | null;
+    old_stack_size: number | null;
+    new_stack_size: number | null;
+    retail_stack_size: number | null;
+    old_level: number | null;
+    new_level: number | null;
+    retail_level: number | null;
+    old_item_type: string | null;
+    new_item_type: string | null;
+    retail_item_type: string | null;
+    old_shield_size: number | null;
+    new_shield_size: number | null;
+    retail_shield_size: number | null;
+    old_max_charges: number | null;
+    new_max_charges: number | null;
+    retail_max_charges: number | null;
+    old_casting_time: number | null;
+    new_casting_time: number | null;
+    retail_casting_time: number | null;
+    old_use_delay: number | null;
+    new_use_delay: number | null;
+    retail_use_delay: number | null;
+    old_reuse_delay: number | null;
+    new_reuse_delay: number | null;
+    retail_reuse_delay: number | null;
+    old_valid_targets: string[] | null;
+    new_valid_targets: string[] | null;
+    retail_valid_targets: string[] | null;
+    old_slots: string[] | null;
+    new_slots: string[] | null;
+    retail_slots: string[] | null;
+    old_icon_bytes: string | null;
+    new_icon_bytes: string | null;
+    retail_icon_bytes: string | null;
+    old_flags: string[] | null;
+    new_flags: string[] | null;
+    retail_flags: string[] | null;
+    old_jobs: string[] | null;
+    new_jobs: string[] | null;
+    retail_jobs: string[] | null;
+    old_en_name: string | null;
+    new_en_name: string | null;
+    retail_en_name: string | null;
+    old_en_description: string | null;
+    new_en_description: string | null;
+    retail_en_description: string | null;
+    old_jp_name: string | null;
+    new_jp_name: string | null;
+    retail_jp_name: string | null;
+    old_jp_description: string | null;
+    new_jp_description: string | null;
+    retail_jp_description: string | null;
+    has_japanese: boolean;
+    has_retail_entry: boolean;
+    choice: EntityDiffChoice;
+}
+
+export interface ItemDiffResult {
+    rows: ItemDiffRow[];
+    old_count: number;
+    new_count: number;
+    changed_count: number;
+    old_japanese_path: string | null;
+    new_japanese_path: string | null;
+}
+
 export interface EntityDiffSaveResult {
     written_count: number;
     kept_old_count: number;
     kept_new_count: number;
     out_yaml_path: string;
     out_dat_path: string | null;
+}
+
+export interface ItemDiffSaveResult {
+    written_count: number;
+    kept_old_count: number;
+    kept_new_count: number;
+    out_yaml_path: string;
+    out_dat_path: string | null;
+    japanese_out_yaml_path: string | null;
+    japanese_out_dat_path: string | null;
 }
 
 export interface SpellDiffSaveResult {
@@ -418,7 +498,7 @@ export async function loadZoneEditorData(zoneId: number): Promise<Result<ZoneEdi
     }
 }
 
-export async function compareItemFiles(oldPath: string, newPath: string): Promise<Result<EntityDiffResult, any>> {
+export async function compareItemFiles(oldPath: string, newPath: string): Promise<Result<ItemDiffResult, any>> {
     try {
         return { status: "ok", data: await TAURI_INVOKE("compare_item_files", { oldPath, newPath }) };
     } catch (e) {
@@ -461,10 +541,10 @@ export async function saveEntityNameDiff(
 export async function saveItemDiff(
     oldPath: string,
     newPath: string,
-    rows: EntityDiffRow[],
+    rows: ItemDiffRow[],
     outYamlPath: string,
     outDatPath: string | null,
-): Promise<Result<EntityDiffSaveResult, any>> {
+): Promise<Result<ItemDiffSaveResult, any>> {
     try {
         return {
             status: "ok",

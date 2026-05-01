@@ -216,21 +216,6 @@ pub enum MagicType {
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, FromPrimitive, IntoPrimitive,
 )]
-#[repr(u8)]
-pub enum AoeType {
-    None = 0,
-    TargetAoe = 1,
-    SelfConal = 2,
-    SelfAoe = 3,
-
-    #[num_enum(catch_all)]
-    #[serde(untagged)]
-    Unknown(u8),
-}
-
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, FromPrimitive, IntoPrimitive,
-)]
 #[repr(u32)]
 pub enum MagicValidTargetType {
     All = 0,

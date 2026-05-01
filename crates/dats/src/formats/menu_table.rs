@@ -1,14 +1,16 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    enums::{AreaShapeType, AoeType, CommValidTargetType, Element, JobEnum, MagicType, MagicValidTargetType, SkillType, SpellDistance,
+    enums::{
+        AreaShapeType, CommValidTargetType, Element, JobEnum, MagicType, MagicValidTargetType,
+        ModifierType, SkillType, SpellDistance,
     },
     serde_base64, serde_hex, serde_hex_num,
     utils::{
         decode_data_block_masked, decode_text_block, encode_data_block_masked, encode_text_block,
     },
 };
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use common::{
     byte_walker::{BufferedByteWalker, ByteWalker},
     expect, expect_msg, get_padding, get_padding_16,
@@ -195,18 +197,16 @@ pub struct AbilityInfo {
     id: u16,
     ability_type: AbilityType,
     icon_id: u8,
-    #[serde(alias = "unknown1")]
-    icon2_id: u16,
+    unknown1: u16,
     #[serde(alias = "mp_cost")]
     charges_required: u16,
-    #[serde(alias = "shared_timer_id")]
-    recast_id: u16,
+    shared_timer_id: u16,
     valid_targets: ValidTargets,
     tp_cost: i16,
     level: i8,
-    range: i8,
-    radius: i8,
-    aoe_type: AoeType,
+    range: SpellDistance,
+    aoe_range: SpellDistance,
+    area_shape: AreaShapeType,
     valid_target_type: CommValidTargetType,
     tp_modifier: ModifierType,
     tp_modifier_values: Vec<i16>,
@@ -261,16 +261,16 @@ impl SectionInfo for AbilityInfo {
             id: data_walker.step::<u16>()?,
             ability_type: AbilityType::from(data_walker.step::<u8>()?),
             icon_id: data_walker.step::<u8>()?,
-            icon2_id: data_walker.step::<u16>()?,
+            unknown1: data_walker.step::<u16>()?,
             charges_required: data_walker.step::<u16>()?,
-            recast_id: data_walker.step::<u16>()?,
+            shared_timer_id: data_walker.step::<u16>()?,
             valid_targets: ValidTargets::from_bits(data_walker.step::<u16>()?).unwrap_or_default(),
             tp_cost: data_walker.step::<i16>()?,
             unknown_0e: data_walker.step::<u8>()?,
             level: data_walker.step::<u8>()? as i8,
-            range: data_walker.step::<u8>()? as i8,
-            radius: data_walker.step::<u8>()? as i8,
-            aoe_type: AoeType::from(data_walker.step::<u8>()?),
+            range: SpellDistance::from(data_walker.step::<u8>()?),
+            aoe_range: SpellDistance::from(data_walker.step::<u8>()?),
+            area_shape: AreaShapeType::from(data_walker.step::<u8>()?),
             valid_target_type: CommValidTargetType::from(data_walker.step::<u16>()?),
             tp_modifier: ModifierType::from(data_walker.step::<u8>()? as i8),
             tp_modifier_values: (0..3)
@@ -305,16 +305,16 @@ impl SectionInfo for AbilityInfo {
         data_walker.write(self.id);
         data_walker.write::<u8>(self.ability_type.into());
         data_walker.write(self.icon_id);
-        data_walker.write(self.icon2_id);
+        data_walker.write(self.unknown1);
         data_walker.write(self.charges_required);
-        data_walker.write(self.recast_id);
+        data_walker.write(self.shared_timer_id);
         data_walker.write(self.valid_targets.bits());
         data_walker.write(self.tp_cost);
         data_walker.write(self.unknown_0e);
         data_walker.write(self.level as u8);
-        data_walker.write(self.range as u8);
-        data_walker.write(self.radius as u8);
-        data_walker.write::<u8>(self.aoe_type.into());
+        data_walker.write::<u8>(self.range.into());
+        data_walker.write::<u8>(self.aoe_range.into());
+        data_walker.write::<u8>(self.area_shape.into());
         data_walker.write::<u16>(self.valid_target_type.into());
         data_walker.write::<u8>(i8::from(self.tp_modifier) as u8);
         if self.tp_modifier_values.len() != 3 {
@@ -367,7 +367,7 @@ pub struct MagicInfo {
     id: u16,
     icon_id: u16,
     unknown_0x42: u16,
-    modifiers: MagicModifier,
+    modifiers: MagicModifier, // unknown_0x44
     range: SpellDistance,
     aoe_range: SpellDistance,
     area_shape: AreaShapeType,
@@ -391,7 +391,7 @@ impl SectionInfo for MagicInfo {
         decode_data_block_masked(&mut data_bytes);
         let mut data_walker = BufferedByteWalker::on(data_bytes);
 
-        let mut info = MagicInfo {
+        let info = MagicInfo {
             index: data_walker.step::<u16>()?,
             magic_type: MagicType::from(data_walker.step::<u16>()?),
             element: Element::try_from(data_walker.step::<u16>()?)?,
@@ -414,8 +414,8 @@ impl SectionInfo for MagicInfo {
             id: data_walker.step()?,
             icon_id: data_walker.step()?,
             unknown_0x42: data_walker.step()?,
-            range: SpellDistance::from(data_walker.step::<u8>()?),
             modifiers: MagicModifier::from_bits_retain(data_walker.step::<u8>()?),
+            range: SpellDistance::from(data_walker.step::<u8>()?),
             aoe_range: SpellDistance::from(data_walker.step::<u8>()?),
             area_shape: AreaShapeType::from(data_walker.step::<u8>()?),
 
@@ -427,8 +427,6 @@ impl SectionInfo for MagicInfo {
                 .to_vec(),
         };
 
-
-        info.unknowns.extend_from_slice(data_walker.take_bytes(3)?);
         data_walker.expect_msg::<u8>(0xFF, "End of magic marker")?;
 
         Ok(info)
@@ -467,17 +465,10 @@ impl SectionInfo for MagicInfo {
         data_walker.write::<u8>(self.range.into());
         data_walker.write::<u8>(self.aoe_range.into());
         data_walker.write::<u8>(self.area_shape.into());
-        data_walker.write_bytes(&self.unknowns);
         data_walker.write::<u32>(self.valid_target_type.into());
         data_walker.write(self.modifiers_ex);
-        if self.unknowns.len() != 15 {
-            return Err(anyhow!(
-                "MagicInfo unknowns must be 15 bytes, found {}",
-                self.unknowns.len()
-            ));
-        }
-
         data_walker.write(self.gifts_required.bits());
+        data_walker.write_bytes(&self.unknowns);
 
         data_walker.write::<u8>(0xFF);
 
@@ -832,8 +823,8 @@ mod tests {
     use crate::{
         dat_format::DatFormat,
         enums::{
-            AbilityType, AoeType, CommValidTargetType, Element, JobEnum, MagicType,
-            MagicValidTargetType, ModifierType, SkillType,
+            AbilityType, AreaShapeType, CommValidTargetType, Element, JobEnum, MagicType,
+            MagicValidTargetType, ModifierType, SkillType, SpellDistance,
         },
         flags::{JobFlag, MagicModifier, ValidTargets},
         formats::menu_table::Section,
@@ -881,33 +872,29 @@ mod tests {
                 .collect()
         );
         assert_eq!(spell.icon_id, 6);
-        assert_eq!(spell.icon2_id, 114);
         assert_eq!(
             spell.modifiers,
             MagicModifier::Accession | MagicModifier::Addendum
         );
-        assert_eq!(spell.range, 12);
-        assert_eq!(spell.radius, 0);
-        assert_eq!(spell.aoe_type, AoeType::None);
+        assert_eq!(spell.range, SpellDistance::D20);
+        assert_eq!(spell.aoe_range, SpellDistance::None);
+        assert_eq!(spell.area_shape, AreaShapeType::Single);
         assert_eq!(spell.valid_target_type, MagicValidTargetType::Pc);
         assert_eq!(spell.modifiers_ex, 0x02800201);
-        assert_eq!(spell.gifts_required, JobFlag::empty());
-        assert_eq!(
-            spell.unknowns,
-            vec![4, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-        );
+        assert_eq!(spell.gifts_required, JobFlag::MNK | JobFlag::BLU);
+        assert_eq!(spell.unknowns, vec![0; 15]);
 
         let spell_yaml = serde_yaml::to_string(spell).unwrap();
         assert!(!spell_yaml.contains("name:"));
-        assert!(spell_yaml.contains("icon2_id: 114"));
+        assert!(spell_yaml.contains("icon_id: 6"));
         assert!(spell_yaml.contains("modifiers:"));
-        assert!(spell_yaml.contains("range: 12"));
-        assert!(spell_yaml.contains("radius: 0"));
-        assert!(spell_yaml.contains("aoe_type: None"));
+        assert!(spell_yaml.contains("range: D20"));
+        assert!(spell_yaml.contains("aoe_range: None"));
+        assert!(spell_yaml.contains("area_shape: Single"));
         assert!(spell_yaml.contains("valid_target_type: Pc"));
         assert!(spell_yaml.contains("modifiers_ex: '0x01028002'"));
-        assert!(spell_yaml.contains("gifts_required: []"));
-        assert!(spell_yaml.contains("unknowns: '0x040001000000000000000000000000'"));
+        assert!(spell_yaml.contains("gifts_required:"));
+        assert!(spell_yaml.contains("unknowns: '0x000000000000000000000000000000'"));
         assert!(!spell_yaml.contains("unknown50:"));
         assert!(!spell_yaml.contains("unknown54:"));
         assert!(!spell_yaml.contains("unknown58:"));
@@ -926,15 +913,15 @@ mod tests {
         assert_eq!(ability.id, 6);
         assert_eq!(ability.ability_type, AbilityType::Weapon);
         assert_eq!(ability.icon_id, 46);
-        assert_eq!(ability.icon2_id, 590);
+        assert_eq!(ability.unknown1, 590);
         assert_eq!(ability.charges_required, 0);
-        assert_eq!(ability.recast_id, 900);
+        assert_eq!(ability.shared_timer_id, 900);
         assert_eq!(ability.valid_targets, ValidTargets::Enemy);
         assert_eq!(ability.tp_cost, -1);
         assert_eq!(ability.level, 0);
-        assert_eq!(ability.range, 2);
-        assert_eq!(ability.radius, 3);
-        assert_eq!(ability.aoe_type, AoeType::TargetAoe);
+        assert_eq!(ability.range, SpellDistance::D3);
+        assert_eq!(ability.aoe_range, SpellDistance::D4);
+        assert_eq!(ability.area_shape, AreaShapeType::Sphere);
         assert_eq!(ability.valid_target_type, CommValidTargetType::MobAoe);
         assert_eq!(ability.tp_modifier, ModifierType::RadiusOrNone);
         assert_eq!(ability.tp_modifier_values, vec![0, 48, 96]);
@@ -958,13 +945,13 @@ mod tests {
 
         let ability_yaml = serde_yaml::to_string(ability).unwrap();
         assert!(!ability_yaml.contains("name:"));
-        assert!(ability_yaml.contains("icon2_id: 590"));
+        assert!(ability_yaml.contains("unknown1: 590"));
         assert!(ability_yaml.contains("charges_required: 0"));
-        assert!(ability_yaml.contains("recast_id: 900"));
+        assert!(ability_yaml.contains("shared_timer_id: 900"));
         assert!(ability_yaml.contains("level: 0"));
-        assert!(ability_yaml.contains("range: 2"));
-        assert!(ability_yaml.contains("radius: 3"));
-        assert!(ability_yaml.contains("aoe_type: TargetAoe"));
+        assert!(ability_yaml.contains("range: D3"));
+        assert!(ability_yaml.contains("aoe_range: D4"));
+        assert!(ability_yaml.contains("area_shape: Sphere"));
         assert!(ability_yaml.contains("valid_target_type: MobAoe"));
         assert!(ability_yaml.contains("tp_modifier: RadiusOrNone"));
         assert!(ability_yaml.contains("tp_modifier_values:"));
@@ -973,8 +960,6 @@ mod tests {
         assert!(ability_yaml.contains("unknown_26: 0"));
         assert!(ability_yaml.contains("unknown_2e: 0"));
         assert!(!ability_yaml.contains("mp_cost:"));
-        assert!(!ability_yaml.contains("unknown1:"));
-        assert!(!ability_yaml.contains("shared_timer_id:"));
         assert!(!ability_yaml.contains("unknowns:"));
 
         assert_eq!(res.to_bytes().unwrap(), fs::read(&dat_path).unwrap());

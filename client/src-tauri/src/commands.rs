@@ -24,8 +24,8 @@ use crate::{
     entity_diff::{
         self, AbilityDiffResult, AbilityDiffRow, AbilityDiffSaveResult, AbilityTextPaths,
         DiffToolKind, EntityDiffResult, EntityDiffRow, EntityDiffSaveResult, FolderDiffResult,
-        ItemEditorRow, SpellDiffResult, SpellDiffRow, SpellDiffSaveResult, SpellTextPaths,
-        ZoneEditorRow,
+        ItemDiffResult, ItemDiffRow, ItemDiffSaveResult, ItemEditorRow, SpellDiffResult,
+        SpellDiffRow, SpellDiffSaveResult, SpellTextPaths, ZoneEditorRow,
     },
     errors::AppError,
     state::{AppState, FileNotification},
@@ -195,6 +195,163 @@ fn build_output_paths_for_relative_path(
             .join(yaml_file_name),
         custom_root(project_root).join(parent).join(dat_file_name),
     ))
+}
+
+#[derive(Default)]
+struct ItemDiffJapanesePaths {
+    old_japanese_path: Option<PathBuf>,
+    new_japanese_path: Option<PathBuf>,
+    japanese_output_yaml_path: Option<PathBuf>,
+    japanese_output_dat_path: Option<PathBuf>,
+}
+
+fn dat_relative_identity_key(path: &Path) -> Option<String> {
+    let mut relative = rom_relative_path_from_path(path)?;
+    relative.set_extension("");
+    Some(normalize_compare_key_from_str(&relative.to_string_lossy()))
+}
+
+fn item_descriptor_for_selected_path(
+    path: &Path,
+    dat_context: &DatContext,
+) -> Option<DatDescriptor> {
+    let selected_key = dat_relative_identity_key(path)?;
+
+    dat_query::ITEM_DATS.iter().find_map(|descriptor_info| {
+        let descriptor = descriptor_info.descriptor;
+        let relative_path = descriptor
+            .use_dat_with(RelativeDatPathResolver { dat_context })
+            .ok()?;
+        let candidate_key = dat_relative_identity_key(Path::new(&relative_path))?;
+        (candidate_key == selected_key).then_some(descriptor)
+    })
+}
+
+fn paired_path_from_selected_root(
+    selected_path: &Path,
+    paired_relative_path: &str,
+) -> Option<PathBuf> {
+    let components = selected_path.components().collect::<Vec<_>>();
+    let rom_start = components.iter().position(|component| {
+        let upper = component.as_os_str().to_string_lossy().to_ascii_uppercase();
+        upper == "ROM"
+            || (upper.starts_with("ROM")
+                && upper
+                    .chars()
+                    .skip(3)
+                    .all(|character| character.is_ascii_digit()))
+    })?;
+
+    let mut root = PathBuf::new();
+    for component in &components[..rom_start] {
+        root.push(component.as_os_str());
+    }
+
+    let mut paired_relative = PathBuf::from(paired_relative_path);
+    if let Some(extension) = selected_path.extension() {
+        let extension = extension.to_string_lossy();
+        if extension.eq_ignore_ascii_case("yml") || extension.eq_ignore_ascii_case("yaml") {
+            paired_relative.set_extension(extension.as_ref());
+        }
+    }
+
+    Some(root.join(paired_relative))
+}
+
+fn existing_paired_item_path(
+    selected_path: &Path,
+    paired_relative_path: &str,
+    dat_context: &DatContext,
+    project_root: Option<&PathBuf>,
+    allow_project_preference: bool,
+) -> Option<PathBuf> {
+    if let Some(candidate) = paired_path_from_selected_root(selected_path, paired_relative_path) {
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+
+        if selected_path
+            .extension()
+            .map(|extension| {
+                let extension = extension.to_string_lossy();
+                extension.eq_ignore_ascii_case("yml") || extension.eq_ignore_ascii_case("yaml")
+            })
+            .unwrap_or(false)
+        {
+            let mut dat_candidate = candidate;
+            dat_candidate.set_extension("DAT");
+            if dat_candidate.is_file() {
+                return Some(dat_candidate);
+            }
+        }
+    }
+
+    if allow_project_preference {
+        let candidate = preferred_dat_source_path(paired_relative_path, dat_context, project_root);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+
+    let retail_candidate = dat_context.ffxi_path.join(paired_relative_path);
+    retail_candidate.is_file().then_some(retail_candidate)
+}
+
+fn resolve_item_diff_japanese_paths(
+    old_path: &Path,
+    new_path: &Path,
+    dat_context: Option<&DatContext>,
+    project_root: Option<&PathBuf>,
+) -> Result<ItemDiffJapanesePaths, AppError> {
+    let Some(dat_context) = dat_context else {
+        return Ok(ItemDiffJapanesePaths::default());
+    };
+
+    let descriptor = item_descriptor_for_selected_path(old_path, dat_context)
+        .or_else(|| item_descriptor_for_selected_path(new_path, dat_context));
+    let Some(descriptor) = descriptor else {
+        return Ok(ItemDiffJapanesePaths::default());
+    };
+    if !descriptor.has_jp_dat() {
+        return Ok(ItemDiffJapanesePaths::default());
+    }
+
+    let japanese_relative =
+        resolve_descriptor_relative_path(descriptor, DatLanguage::Japanese, dat_context)?;
+    let old_japanese_path = existing_paired_item_path(
+        old_path,
+        &japanese_relative,
+        dat_context,
+        project_root,
+        true,
+    );
+    let new_japanese_path = existing_paired_item_path(
+        new_path,
+        &japanese_relative,
+        dat_context,
+        project_root,
+        false,
+    );
+
+    let (japanese_output_yaml_path, japanese_output_dat_path) =
+        if old_japanese_path.is_some() || new_japanese_path.is_some() {
+            if let Some(project_root) = project_root {
+                let (yaml_path, dat_path) =
+                    build_output_paths_for_relative_path(&japanese_relative, project_root)?;
+                (Some(yaml_path), Some(dat_path))
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
+
+    Ok(ItemDiffJapanesePaths {
+        old_japanese_path,
+        new_japanese_path,
+        japanese_output_yaml_path,
+        japanese_output_dat_path,
+    })
 }
 
 #[tauri::command]
@@ -1432,8 +1589,25 @@ pub async fn compare_entity_name_files(
 pub async fn compare_item_files(
     old_path: PathBuf,
     new_path: PathBuf,
-) -> Result<EntityDiffResult, AppError> {
-    Ok(entity_diff::compare_item_files(old_path, new_path)?)
+    state: AppState<'_>,
+) -> Result<ItemDiffResult, AppError> {
+    let (dat_context, project_root) = {
+        let state = state.read();
+        (state.dat_context.clone(), state.project_path.clone())
+    };
+    let japanese_paths = resolve_item_diff_japanese_paths(
+        &old_path,
+        &new_path,
+        dat_context.as_ref().map(|context| context.as_ref()),
+        project_root.as_ref(),
+    )?;
+
+    Ok(entity_diff::compare_item_files(
+        old_path,
+        new_path,
+        japanese_paths.old_japanese_path,
+        japanese_paths.new_japanese_path,
+    )?)
 }
 
 #[tauri::command]
@@ -1611,16 +1785,32 @@ pub async fn save_entity_name_diff(
 pub async fn save_item_diff(
     old_path: PathBuf,
     new_path: PathBuf,
-    rows: Vec<EntityDiffRow>,
+    rows: Vec<ItemDiffRow>,
     out_yaml_path: PathBuf,
     out_dat_path: Option<PathBuf>,
-) -> Result<EntityDiffSaveResult, AppError> {
+    state: AppState<'_>,
+) -> Result<ItemDiffSaveResult, AppError> {
+    let (dat_context, project_root) = {
+        let state = state.read();
+        (state.dat_context.clone(), state.project_path.clone())
+    };
+    let japanese_paths = resolve_item_diff_japanese_paths(
+        &old_path,
+        &new_path,
+        dat_context.as_ref().map(|context| context.as_ref()),
+        project_root.as_ref(),
+    )?;
+
     Ok(entity_diff::save_item_diff(
         old_path,
         new_path,
+        japanese_paths.old_japanese_path,
+        japanese_paths.new_japanese_path,
         rows,
         out_yaml_path,
         out_dat_path,
+        japanese_paths.japanese_output_yaml_path,
+        japanese_paths.japanese_output_dat_path,
     )?)
 }
 

@@ -129,6 +129,12 @@ pub struct ItemEditorRow {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ZoneEditorRow {
+    pub id: u32,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpellDiffRow {
     pub row: u32,
     pub old_index: Option<u32>,
@@ -460,6 +466,55 @@ pub fn save_entity_name_diff(
         out_yaml_path: out_yaml_path.display().to_string(),
         out_dat_path: written_dat,
     })
+}
+
+pub fn load_zone_editor_rows(path: PathBuf) -> Result<Vec<ZoneEditorRow>> {
+    Ok(load_entity_names(&path)?
+        .names
+        .into_iter()
+        .map(|entry| ZoneEditorRow {
+            id: entry.id,
+            name: entry.name,
+        })
+        .collect())
+}
+
+pub fn save_zone_editor_rows(
+    rows: Vec<ZoneEditorRow>,
+    out_yaml_path: PathBuf,
+    out_dat_path: PathBuf,
+) -> Result<usize> {
+    let mut seen_ids = BTreeSet::new();
+    for row in &rows {
+        if !seen_ids.insert(row.id) {
+            anyhow::bail!("Zone ID {} appears more than once.", row.id);
+        }
+    }
+
+    let merged = EntityNamesYaml {
+        names: rows
+            .iter()
+            .map(|row| EntityNameYaml {
+                id: row.id,
+                name: row.name.clone(),
+            })
+            .collect(),
+    };
+
+    if let Some(parent) = out_yaml_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let yaml_file = File::create(&out_yaml_path)?;
+    serde_yaml::to_writer(BufWriter::new(yaml_file), &merged)?;
+
+    if let Some(parent) = out_dat_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let value = serde_yaml::to_value(&merged)?;
+    let dat: EntityNames = serde_yaml::from_value(value)?;
+    fs::write(&out_dat_path, dat.to_bytes()?)?;
+
+    Ok(merged.names.len())
 }
 
 pub fn compare_item_files(old_path: PathBuf, new_path: PathBuf) -> Result<EntityDiffResult> {

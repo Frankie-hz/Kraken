@@ -962,6 +962,10 @@ button.active {
   background: rgba(10, 15, 31, 0.9);
 }
 
+.table-shell.is-scrollable {
+  overflow: auto;
+}
+
 .table-shell thead th {
   position: sticky;
   top: 0;

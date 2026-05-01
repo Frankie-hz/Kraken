@@ -28,6 +28,7 @@ import ItemDiffTool from "./components/ItemDiffTool";
 import ItemEditorTool from "./components/ItemEditorTool";
 import SpellDiffTool from "./components/SpellDiffTool";
 import AbilityDiffTool from "./components/AbilityDiffTool";
+import ZoneEditorTool from "./components/ZoneEditorTool";
 
 function formatDatDescriptorType(type: string) {
   if (type === "DataMenu") {
@@ -86,6 +87,11 @@ const navItems: NavItem[] = [
             name: "Abilities",
             path: "/ability-diff",
             icon: () => <HiSolidArrowsRightLeft />,
+          },
+          {
+            name: "Zones",
+            path: "/zone-editor",
+            icon: () => <HiSolidMap />,
           },
         ],
       },
@@ -362,6 +368,11 @@ function App() {
                 <Route
                   path="/ability-diff"
                   component={AbilityDiffTool}
+                ></Route>
+
+                <Route
+                  path="/zone-editor"
+                  component={ZoneEditorTool}
                 ></Route>
               </Routes>
             </div>

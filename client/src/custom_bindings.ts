@@ -42,6 +42,33 @@ export async function resetItemEditorDataToRetailBase(descriptor: DatDescriptor)
     }
 }
 
+export async function copyZoneEntityDatToProject(zoneId: number): Promise<Result<string, any>> {
+    try {
+        return { status: "ok", data: await TAURI_INVOKE("copy_zone_entity_dat_to_project", { zoneId }) };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        else return { status: "error", error: e as any };
+    }
+}
+
+export async function resetZoneEntityDatToRetailBase(zoneId: number): Promise<Result<string, any>> {
+    try {
+        return { status: "ok", data: await TAURI_INVOKE("reset_zone_entity_dat_to_retail_base", { zoneId }) };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        else return { status: "error", error: e as any };
+    }
+}
+
+export async function isZoneEntityDatMadeInProject(zoneId: number): Promise<Result<boolean, any>> {
+    try {
+        return { status: "ok", data: await TAURI_INVOKE("is_zone_entity_dat_made_in_project", { zoneId }) };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        else return { status: "error", error: e as any };
+    }
+}
+
 export async function copySpellDatToProject(): Promise<Result<string, any>> {
     try {
         return { status: "ok", data: await TAURI_INVOKE("copy_spell_dat_to_project") };
@@ -177,6 +204,26 @@ export interface ItemEditorLoadResult {
     japanese_output_yaml_path: string | null;
     japanese_output_dat_path: string | null;
     rows: ItemEditorRow[];
+}
+
+export interface ZoneEditorRow {
+    id: number;
+    name: string;
+}
+
+export interface ZoneEditorLoadResult {
+    zone_id: number;
+    zone_name: string;
+    source_path: string;
+    output_yaml_path: string;
+    output_dat_path: string;
+    rows: ZoneEditorRow[];
+}
+
+export interface ZoneEditorSaveResult {
+    written_count: number;
+    out_yaml_path: string;
+    out_dat_path: string;
 }
 
 export interface ItemEditorSaveResult {
@@ -362,6 +409,15 @@ export async function loadItemEditorData(descriptor: DatDescriptor): Promise<Res
     }
 }
 
+export async function loadZoneEditorData(zoneId: number): Promise<Result<ZoneEditorLoadResult, any>> {
+    try {
+        return { status: "ok", data: await TAURI_INVOKE("load_zone_editor_data", { zoneId }) };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        else return { status: "error", error: e as any };
+    }
+}
+
 export async function compareItemFiles(oldPath: string, newPath: string): Promise<Result<EntityDiffResult, any>> {
     try {
         return { status: "ok", data: await TAURI_INVOKE("compare_item_files", { oldPath, newPath }) };
@@ -429,6 +485,21 @@ export async function saveItemEditorData(
         return {
             status: "ok",
             data: await TAURI_INVOKE("save_item_editor_data", { descriptor, rows, saveTarget }),
+        };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        else return { status: "error", error: e as any };
+    }
+}
+
+export async function saveZoneEditorData(
+    zoneId: number,
+    rows: ZoneEditorRow[],
+): Promise<Result<ZoneEditorSaveResult, any>> {
+    try {
+        return {
+            status: "ok",
+            data: await TAURI_INVOKE("save_zone_editor_data", { zoneId, rows }),
         };
     } catch (e) {
         if (e instanceof Error) throw e;

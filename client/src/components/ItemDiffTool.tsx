@@ -1,10 +1,10 @@
-import { open } from "@tauri-apps/plugin-dialog";
 import { useSearchParams } from "@solidjs/router";
-import { For, Show, batch, createDeferred, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, batch, createDeferred, createEffect, createMemo, createResource, createSignal, onCleanup, onMount } from "solid-js";
 import { createStore, produce } from "solid-js/store";
+import { commands, DatDescriptorInfo } from "../bindings";
 import {
   EntityDiffChoice,
-  EntityDiffRow,
+  ItemDiffRow,
   compareItemFiles,
   saveItemDiff,
 } from "../custom_bindings";
@@ -26,15 +26,36 @@ function arraysEqual(a: string[] | null | undefined, b: string[] | null | undefi
   return true;
 }
 
-function isChangedRow(row: EntityDiffRow) {
+type ItemDiffUiRow = ItemDiffRow & {
+  old_name?: string | null;
+  new_name?: string | null;
+  retail_name?: string | null;
+  old_description?: string | null;
+  new_description?: string | null;
+  retail_description?: string | null;
+};
+
+function isChangedRow(row: ItemDiffUiRow) {
   const flagsChanged = !arraysEqual(row.old_flags, row.new_flags);
   const jobsChanged = !arraysEqual(row.old_jobs, row.new_jobs);
 
   return (
     row.old_id !== row.new_id ||
-    row.old_name !== row.new_name ||
+    row.old_en_name !== row.new_en_name ||
     row.old_stack_size !== row.new_stack_size ||
-    row.old_description !== row.new_description ||
+    row.old_level !== row.new_level ||
+    (row.old_item_type ?? null) !== (row.new_item_type ?? null) ||
+    row.old_shield_size !== row.new_shield_size ||
+    row.old_max_charges !== row.new_max_charges ||
+    row.old_casting_time !== row.new_casting_time ||
+    row.old_use_delay !== row.new_use_delay ||
+    row.old_reuse_delay !== row.new_reuse_delay ||
+    !arraysEqual(row.old_valid_targets, row.new_valid_targets) ||
+    !arraysEqual(row.old_slots, row.new_slots) ||
+    (row.old_icon_bytes ?? null) !== (row.new_icon_bytes ?? null) ||
+    (row.old_en_description ?? null) !== (row.new_en_description ?? null) ||
+    (row.old_jp_name ?? null) !== (row.new_jp_name ?? null) ||
+    (row.old_jp_description ?? null) !== (row.new_jp_description ?? null) ||
     flagsChanged ||
     jobsChanged ||
     row.old_id === null ||
@@ -44,6 +65,18 @@ function isChangedRow(row: EntityDiffRow) {
 
 function newFieldClass(changed: boolean) {
   return changed ? "bg-rose-950/35 text-rose-200" : "bg-emerald-950/35 text-emerald-200";
+}
+
+function listChangeTextClass(originalValues: string[], targetValues: string[], value: string) {
+  const wasPresent = originalValues.includes(value);
+  const isPresent = targetValues.includes(value);
+  if (!wasPresent && isPresent) {
+    return "text-emerald-200";
+  }
+  if (wasPresent && !isPresent) {
+    return "text-rose-200 line-through decoration-rose-300/80";
+  }
+  return wasPresent ? "text-slate-100" : "text-slate-400";
 }
 
 function retailDiffValueClass(changed: boolean) {
@@ -68,8 +101,8 @@ function retailListValueClass(kind: "same" | "current-only" | "retail-only") {
   return "text-xs text-slate-100";
 }
 
-function defaultChoiceForRow(row: EntityDiffRow): EntityDiffChoice {
-  if (row.old_id !== null && row.old_name !== null) {
+function defaultChoiceForRow(row: ItemDiffUiRow): EntityDiffChoice {
+  if (row.old_id !== null && row.old_en_name !== null) {
     return "Old";
   }
   return "New";
@@ -206,22 +239,85 @@ const ITEM_JOB_OPTIONS = [
   "WAR",
   "WHM",
 ];
+const ITEM_TYPE_OPTIONS = [
+  "None",
+  "Item",
+  "QuestItem",
+  "Fish",
+  "Weapon",
+  "Armor",
+  "Linkshell",
+  "UsableItem",
+  "Crystal",
+  "Currency",
+  "Furnishing",
+  "Plant",
+  "Flowerpot",
+  "PuppetItem",
+  "Mannequin",
+  "Book",
+  "RacingForm",
+  "BettingSlip",
+  "SoulPlate",
+  "Reflector",
+  "LotteryTicket",
+  "MazeTabulaM",
+  "MazeTabulaR",
+  "MazeVoucher",
+  "MazeRune",
+  "StorageSlip",
+  "Instinct",
+];
+const VALID_TARGET_PRESETS = [
+  { label: "None", values: [] as string[] },
+  { label: "Self", values: ["SelfTarget"] },
+  { label: "Player", values: ["Player"] },
+  { label: "Party Member", values: ["PartyMember"] },
+  { label: "Ally", values: ["Ally"] },
+  { label: "NPC", values: ["NPC"] },
+  { label: "Enemy", values: ["Enemy"] },
+  { label: "Object", values: ["Object"] },
+  { label: "Corpse", values: ["Corpse"] },
+  { label: "Unknown", values: ["Unknown"] },
+];
+const SLOT_PRESETS = [
+  { label: "None", values: [] as string[] },
+  { label: "Main", values: ["Main"] },
+  { label: "Sub", values: ["Sub"] },
+  { label: "Main + Sub", values: ["Main", "Sub"] },
+  { label: "Range", values: ["Range"] },
+  { label: "Ammo", values: ["Ammo"] },
+  { label: "Head", values: ["Head"] },
+  { label: "Body", values: ["Body"] },
+  { label: "Hands", values: ["Hands"] },
+  { label: "Legs", values: ["Legs"] },
+  { label: "Feet", values: ["Feet"] },
+  { label: "Neck", values: ["Neck"] },
+  { label: "Waist", values: ["Waist"] },
+  { label: "Ears", values: ["Ears"] },
+  { label: "Rings", values: ["Rings"] },
+  { label: "Back", values: ["Back"] },
+];
 
 interface ItemDiffCachedState {
   edited_path: string;
   new_retail_path: string;
-  rows?: EntityDiffRow[];
+  old_japanese_path?: string;
+  new_japanese_path?: string;
+  selected_dat_type?: string;
+  rows?: ItemDiffUiRow[];
   retail_snapshot_by_row?: Record<number, ItemDiffRetailSnapshot>;
   old_count: number;
   new_count: number;
   changed_count: number;
   show_changed_only: boolean;
   table_filter: string;
-  manual_edit: boolean;
   selected_row: number | null;
   last_notice: string;
   last_saved_yaml_path: string;
   last_saved_dat_path: string;
+  last_saved_japanese_yaml_path?: string;
+  last_saved_japanese_dat_path?: string;
 }
 
 interface ItemDiffRetailSnapshot {
@@ -229,40 +325,65 @@ interface ItemDiffRetailSnapshot {
   id: number | null;
   name: string | null;
   stack_size: number | null;
+  level: number | null;
+  item_type: string | null;
+  shield_size: number | null;
+  max_charges: number | null;
+  casting_time: number | null;
+  use_delay: number | null;
+  reuse_delay: number | null;
+  valid_targets: string[] | null;
+  slots: string[] | null;
+  icon_bytes: string | null;
   flags: string[] | null;
   jobs: string[] | null;
-  description: string | null;
+  en_description: string | null;
+  jp_name: string | null;
+  jp_description: string | null;
 }
 
-function isRetailChangedRow(row: EntityDiffRow, retailSnapshot?: ItemDiffRetailSnapshot | null) {
-  const retailId = retailSnapshot?.id ?? row.new_id;
-  const retailName = retailSnapshot?.name ?? row.new_name;
-  const retailStackSize = retailSnapshot?.stack_size ?? row.new_stack_size;
-  const retailFlags = retailSnapshot?.flags ?? normalizedStringList(row.new_flags);
-  const retailJobs = retailSnapshot?.jobs ?? normalizedStringList(row.new_jobs);
-  const retailDescription = retailSnapshot?.description ?? row.new_description ?? null;
+function isRetailChangedRow(row: ItemDiffUiRow, retailSnapshot?: ItemDiffRetailSnapshot | null) {
+  const retailStackSize = retailSnapshot?.stack_size ?? row.retail_stack_size;
+  const retailLevel = retailSnapshot?.level ?? row.retail_level;
+  const retailItemType = retailSnapshot?.item_type ?? row.retail_item_type;
+  const retailShieldSize = retailSnapshot?.shield_size ?? row.retail_shield_size;
+  const retailMaxCharges = retailSnapshot?.max_charges ?? row.retail_max_charges;
+  const retailCastingTime = retailSnapshot?.casting_time ?? row.retail_casting_time;
+  const retailUseDelay = retailSnapshot?.use_delay ?? row.retail_use_delay;
+  const retailReuseDelay = retailSnapshot?.reuse_delay ?? row.retail_reuse_delay;
+  const retailValidTargets = retailSnapshot?.valid_targets ?? normalizedStringList(row.retail_valid_targets);
+  const retailSlots = retailSnapshot?.slots ?? normalizedStringList(row.retail_slots);
+  const retailIconBytes = retailSnapshot?.icon_bytes ?? row.retail_icon_bytes ?? null;
+  const retailFlags = retailSnapshot?.flags ?? normalizedStringList(row.retail_flags);
+  const retailJobs = retailSnapshot?.jobs ?? normalizedStringList(row.retail_jobs);
+  const retailEnDescription = retailSnapshot?.en_description ?? row.retail_en_description ?? null;
+  const retailJpName = retailSnapshot?.jp_name ?? row.retail_jp_name ?? null;
+  const retailJpDescription = retailSnapshot?.jp_description ?? row.retail_jp_description ?? null;
 
   return (
-    row.old_id !== retailId ||
-    row.old_name !== retailName ||
     row.old_stack_size !== retailStackSize ||
+    row.old_level !== retailLevel ||
+    (row.old_item_type ?? null) !== (retailItemType ?? null) ||
+    row.old_shield_size !== retailShieldSize ||
+    row.old_max_charges !== retailMaxCharges ||
+    row.old_casting_time !== retailCastingTime ||
+    row.old_use_delay !== retailUseDelay ||
+    row.old_reuse_delay !== retailReuseDelay ||
+    !arraysEqual(normalizedStringList(row.old_valid_targets), retailValidTargets) ||
+    !arraysEqual(normalizedStringList(row.old_slots), retailSlots) ||
+    (row.old_icon_bytes ?? null) !== retailIconBytes ||
     !arraysEqual(normalizedStringList(row.old_flags), retailFlags) ||
     !arraysEqual(normalizedStringList(row.old_jobs), retailJobs) ||
-    (row.old_description ?? null) !== retailDescription
+    (row.old_en_description ?? null) !== retailEnDescription ||
+    (row.old_jp_name ?? null) !== retailJpName ||
+    (row.old_jp_description ?? null) !== retailJpDescription ||
+    row.old_id === null ||
+    !row.has_retail_entry
   );
 }
 
 function compactButtonClass(active = false) {
   return `${compactButtonBaseClass} ${active ? compactButtonActiveClass : compactButtonIdleClass}`;
-}
-
-function pickerDefaultPath(currentPath: string, fallbackDir: string | null) {
-  if (!currentPath) {
-    return fallbackDir ?? undefined;
-  }
-
-  const { dir } = splitPath(currentPath);
-  return dir || fallbackDir || undefined;
 }
 
 function inferRetailPathFromEdited(editedPath: string, ffxiRoot: string | null): string | null {
@@ -311,21 +432,58 @@ function loadCachedState(): ItemDiffCachedState | null {
   }
 }
 
-function rowSearchText(row: EntityDiffRow) {
+function rowSearchText(row: ItemDiffUiRow) {
   return [
     row.row,
     row.old_id,
-    row.old_name,
+    row.old_en_name,
     row.old_stack_size,
-    row.old_description,
+    row.old_level,
+    row.old_item_type,
+    row.old_shield_size,
+    row.old_max_charges,
+    row.old_casting_time,
+    row.old_use_delay,
+    row.old_reuse_delay,
+    row.old_en_description,
+    row.old_jp_name,
+    row.old_jp_description,
     row.new_id,
-    row.new_name,
+    row.new_en_name,
     row.new_stack_size,
-    row.new_description,
+    row.new_level,
+    row.new_item_type,
+    row.new_shield_size,
+    row.new_max_charges,
+    row.new_casting_time,
+    row.new_use_delay,
+    row.new_reuse_delay,
+    row.new_en_description,
+    row.new_jp_name,
+    row.new_jp_description,
+    row.retail_stack_size,
+    row.retail_level,
+    row.retail_item_type,
+    row.retail_shield_size,
+    row.retail_max_charges,
+    row.retail_casting_time,
+    row.retail_use_delay,
+    row.retail_reuse_delay,
+    row.retail_en_description,
+    row.retail_jp_name,
+    row.retail_jp_description,
     ...(row.old_flags ?? []),
     ...(row.new_flags ?? []),
+    ...(row.retail_flags ?? []),
     ...(row.old_jobs ?? []),
     ...(row.new_jobs ?? []),
+    ...(row.retail_jobs ?? []),
+    ...(row.old_valid_targets ?? []),
+    ...(row.new_valid_targets ?? []),
+    ...(row.retail_valid_targets ?? []),
+    ...(row.old_slots ?? []),
+    ...(row.new_slots ?? []),
+    ...(row.retail_slots ?? []),
     row.choice,
   ]
     .filter((value) => value !== null && value !== undefined)
@@ -337,7 +495,38 @@ function normalizedStringList(values: string[] | null | undefined): string[] {
   return Array.from(new Set((values ?? []).map((value) => value.trim()).filter((value) => value.length > 0))).sort();
 }
 
-function buildRowIndexById(rows: EntityDiffRow[]) {
+function displayItemName(value: string | null | undefined, fallback = "-") {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+
+  return value.trim() === "." ? "(Empty)" : value;
+}
+
+function isEmptyItemName(value: string | null | undefined) {
+  return value?.trim() === ".";
+}
+
+function shouldShowJapaneseName(
+  englishValue: string | null | undefined,
+  japaneseValue: string | null | undefined,
+) {
+  if (japaneseValue === null || japaneseValue === undefined) {
+    return false;
+  }
+
+  return displayItemName(englishValue, "") !== displayItemName(japaneseValue, "");
+}
+
+function validTargetPresetKey(values: string[] | null | undefined) {
+  return JSON.stringify(normalizedStringList(values));
+}
+
+function slotPresetKey(values: string[] | null | undefined) {
+  return JSON.stringify(normalizedStringList(values));
+}
+
+function buildRowIndexById(rows: ItemDiffUiRow[]) {
   const indexById = new Map<number, number>();
   rows.forEach((row, index) => {
     indexById.set(row.row, index);
@@ -346,7 +535,7 @@ function buildRowIndexById(rows: EntityDiffRow[]) {
 }
 
 function buildRetailChangedRowIdSet(
-  rows: EntityDiffRow[],
+  rows: ItemDiffUiRow[],
   retailSnapshotByRow: Record<number, ItemDiffRetailSnapshot>,
 ) {
   return new Set(
@@ -365,8 +554,11 @@ function ItemDiffTool() {
 
   const [editedPath, setEditedPath] = createSignal(cachedState?.edited_path ?? "");
   const [newRetailPath, setNewRetailPath] = createSignal(cachedState?.new_retail_path ?? "");
+  const [oldJapanesePath, setOldJapanesePath] = createSignal(cachedState?.old_japanese_path ?? "");
+  const [newJapanesePath, setNewJapanesePath] = createSignal(cachedState?.new_japanese_path ?? "");
+  const [selectedDatType, setSelectedDatType] = createSignal(cachedState?.selected_dat_type ?? "");
 
-  const [rows, setRows] = createStore<EntityDiffRow[]>(cachedState?.rows ?? []);
+  const [rows, setRows] = createStore<ItemDiffUiRow[]>(cachedState?.rows ?? []);
   const [rowIndexById, setRowIndexById] = createSignal<Map<number, number>>(buildRowIndexById(cachedState?.rows ?? []));
   const [retailSnapshotByRow, setRetailSnapshotByRow] = createSignal<Record<number, ItemDiffRetailSnapshot>>(
     cachedState?.retail_snapshot_by_row ?? {},
@@ -380,10 +572,10 @@ function ItemDiffTool() {
 
   const [isComparing, setComparing] = createSignal(false);
   const [isSaving, setSaving] = createSignal(false);
+  const [isResolvingDat, setResolvingDat] = createSignal(false);
   const [showChangedOnly, setShowChangedOnly] = createSignal(cachedState?.show_changed_only ?? true);
   const [tableFilter, setTableFilter] = createSignal(cachedState?.table_filter ?? "");
   const deferredTableFilter = createDeferred(() => tableFilter());
-  const [manualEdit, setManualEdit] = createSignal(cachedState?.manual_edit ?? true);
   const [bulkFlagToRemove, setBulkFlagToRemove] = createSignal(ITEM_FLAG_OPTIONS[0]);
   const [bulkJobToRemove, setBulkJobToRemove] = createSignal(ITEM_JOB_OPTIONS[0]);
   const [selectedRowId, setSelectedRowId] = createSignal<number | null>(cachedState?.selected_row ?? null);
@@ -391,6 +583,8 @@ function ItemDiffTool() {
   const [lastNotice, setLastNotice] = createSignal(cachedState?.last_notice ?? "");
   const [lastSavedYamlPath, setLastSavedYamlPath] = createSignal(cachedState?.last_saved_yaml_path ?? "");
   const [lastSavedDatPath, setLastSavedDatPath] = createSignal(cachedState?.last_saved_dat_path ?? "");
+  const [lastSavedJapaneseYamlPath, setLastSavedJapaneseYamlPath] = createSignal(cachedState?.last_saved_japanese_yaml_path ?? "");
+  const [lastSavedJapaneseDatPath, setLastSavedJapaneseDatPath] = createSignal(cachedState?.last_saved_japanese_dat_path ?? "");
   const [rowsVersion, setRowsVersion] = createSignal(0);
   const [scrollTop, setScrollTop] = createSignal(0);
   const [tableViewportHeight, setTableViewportHeight] = createSignal(480);
@@ -399,18 +593,7 @@ function ItemDiffTool() {
   let scrollFrame = 0;
   let persistStateTimer: number | undefined;
 
-  const changedRowsSelectedOld = createMemo(() => {
-    const changed = changedRowIds();
-    const indexById = rowIndexById();
-    let count = 0;
-    for (const rowId of changed) {
-      const index = indexById.get(rowId);
-      if (index !== undefined && rows[index]?.choice === "Old") {
-        count += 1;
-      }
-    }
-    return count;
-  });
+  const [itemDatOptions] = createResource(async () => unwrap(await commands.getItemDats()));
 
   const rowSearchIndex = createMemo(() => {
     const index = new Map<number, string>();
@@ -462,6 +645,9 @@ function ItemDiffTool() {
       for (const flag of row.new_flags ?? []) {
         discovered.add(flag);
       }
+      for (const flag of row.retail_flags ?? []) {
+        discovered.add(flag);
+      }
     }
     return Array.from(discovered).sort();
   });
@@ -473,6 +659,9 @@ function ItemDiffTool() {
         discovered.add(job);
       }
       for (const job of row.new_jobs ?? []) {
+        discovered.add(job);
+      }
+      for (const job of row.retail_jobs ?? []) {
         discovered.add(job);
       }
     }
@@ -519,7 +708,9 @@ function ItemDiffTool() {
     setRows([]);
     setRowIndexById(new Map());
     setRetailSnapshotByRow({});
-    setChangedRowIds(new Set());
+    setChangedRowIds(new Set<number>());
+    setOldJapanesePath("");
+    setNewJapanesePath("");
     setOldCount(0);
     setNewCount(0);
     setChangedCount(0);
@@ -530,7 +721,7 @@ function ItemDiffTool() {
   const setEditedFile = (path: string) => {
     setEditedPath(path);
 
-    const inferredRetailPath = inferRetailPathFromEdited(path, getDatFolder());
+    const inferredRetailPath = inferRetailPathFromEdited(path, getDatFolder() ?? null);
     if (inferredRetailPath) {
       setNewRetailPath(inferredRetailPath);
     }
@@ -545,6 +736,26 @@ function ItemDiffTool() {
     setLastNotice("");
   };
 
+  const chooseItemDat = async (option: DatDescriptorInfo) => {
+    setResolvingDat(true);
+    try {
+      const englishPath = unwrap(await commands.resolveDatDescriptorPath(option.descriptor, "English"));
+      const retailPath = inferRetailPathFromEdited(englishPath, getDatFolder() ?? null) ?? englishPath;
+
+      batch(() => {
+        setSelectedDatType(option.descriptor.type);
+        setEditedPath(englishPath);
+        setNewRetailPath(retailPath);
+        resetLoadedRows();
+        setLastNotice(`Selected ${option.descriptor.type}${option.has_jp ? " (EN + JP)" : " (EN only)"}.`);
+      });
+    } catch (err) {
+      await showMessage(`${err}`, { title: "DAT Select Error", kind: "error" });
+    } finally {
+      setResolvingDat(false);
+    }
+  };
+
   createEffect(() => {
     if (prefillApplied()) {
       return;
@@ -554,10 +765,10 @@ function ItemDiffTool() {
     const fromListNewRetail = searchParams.newRetail;
 
     batch(() => {
-      if (fromListEdited) {
+      if (typeof fromListEdited === "string") {
         setEditedFile(fromListEdited);
       }
-      if (fromListNewRetail) {
+      if (typeof fromListNewRetail === "string") {
         setNewRetailFile(fromListNewRetail);
       }
       setPrefillApplied(true);
@@ -569,7 +780,7 @@ function ItemDiffTool() {
       return;
     }
 
-    const inferredRetailPath = inferRetailPathFromEdited(editedPath(), getDatFolder());
+    const inferredRetailPath = inferRetailPathFromEdited(editedPath(), getDatFolder() ?? null);
     if (inferredRetailPath) {
       setNewRetailPath(inferredRetailPath);
     }
@@ -596,6 +807,9 @@ function ItemDiffTool() {
 
     editedPath();
     newRetailPath();
+    oldJapanesePath();
+    newJapanesePath();
+    selectedDatType();
     retailSnapshotByRow();
     rowsVersion();
     oldCount();
@@ -603,11 +817,12 @@ function ItemDiffTool() {
     changedCount();
     showChangedOnly();
     tableFilter();
-    manualEdit();
     selectedRowId();
     lastNotice();
     lastSavedYamlPath();
     lastSavedDatPath();
+    lastSavedJapaneseYamlPath();
+    lastSavedJapaneseDatPath();
 
     if (persistStateTimer !== undefined) {
       window.clearTimeout(persistStateTimer);
@@ -617,16 +832,20 @@ function ItemDiffTool() {
       const stateToSave: ItemDiffCachedState = {
         edited_path: editedPath(),
         new_retail_path: newRetailPath(),
+        old_japanese_path: oldJapanesePath(),
+        new_japanese_path: newJapanesePath(),
+        selected_dat_type: selectedDatType(),
         old_count: oldCount(),
         new_count: newCount(),
         changed_count: changedCount(),
         show_changed_only: showChangedOnly(),
         table_filter: tableFilter(),
-        manual_edit: manualEdit(),
         selected_row: selectedRowId(),
         last_notice: lastNotice(),
         last_saved_yaml_path: lastSavedYamlPath(),
         last_saved_dat_path: lastSavedDatPath(),
+        last_saved_japanese_yaml_path: lastSavedJapaneseYamlPath(),
+        last_saved_japanese_dat_path: lastSavedJapaneseDatPath(),
       };
 
       try {
@@ -682,24 +901,6 @@ function ItemDiffTool() {
     };
   });
 
-  const pickFile = async (
-    pathSetter: (path: string) => void,
-    defaultPath?: string,
-  ) => {
-    const selected = await open({
-      multiple: false,
-      directory: false,
-      defaultPath: defaultPath || undefined,
-      filters: [
-        { name: "DAT or YAML", extensions: ["dat", "yml", "yaml"] },
-      ],
-    });
-
-    if (typeof selected === "string") {
-      pathSetter(selected);
-    }
-  };
-
   const runCompare = async () => {
     if (!editedPath() || !newRetailPath()) {
       await showMessage("Select edited and new retail item files first.", { title: "Compare Required", kind: "warning" });
@@ -712,27 +913,48 @@ function ItemDiffTool() {
       const nextRetailSnapshotByRow: Record<number, ItemDiffRetailSnapshot> = {};
       for (const row of result.rows) {
         nextRetailSnapshotByRow[row.row] = {
-          has_retail_entry: row.new_id !== null || row.new_name !== null,
-          id: row.new_id ?? null,
-          name: row.new_name ?? null,
-          stack_size: row.new_stack_size ?? null,
-          flags: row.new_flags ? normalizedStringList(row.new_flags) : null,
-          jobs: row.new_jobs ? normalizedStringList(row.new_jobs) : null,
-          description: row.new_description ?? null,
+          has_retail_entry: row.has_retail_entry,
+          id: row.retail_id ?? null,
+          name: row.retail_en_name ?? null,
+          stack_size: row.retail_stack_size ?? null,
+          level: row.retail_level ?? null,
+          item_type: row.retail_item_type ?? null,
+          shield_size: row.retail_shield_size ?? null,
+          max_charges: row.retail_max_charges ?? null,
+          casting_time: row.retail_casting_time ?? null,
+          use_delay: row.retail_use_delay ?? null,
+          reuse_delay: row.retail_reuse_delay ?? null,
+          valid_targets: row.retail_valid_targets ? normalizedStringList(row.retail_valid_targets) : null,
+          slots: row.retail_slots ? normalizedStringList(row.retail_slots) : null,
+          icon_bytes: row.retail_icon_bytes ?? null,
+          flags: row.retail_flags ? normalizedStringList(row.retail_flags) : null,
+          jobs: row.retail_jobs ? normalizedStringList(row.retail_jobs) : null,
+          en_description: row.retail_en_description ?? null,
+          jp_name: row.retail_jp_name ?? null,
+          jp_description: row.retail_jp_description ?? null,
         };
       }
       const preparedRows = result.rows.map((row) => ({
         ...row,
         choice: defaultChoiceForRow(row),
+        old_name: row.old_en_name ?? null,
+        new_name: row.new_en_name ?? null,
+        retail_name: row.retail_en_name ?? null,
+        old_description: row.old_en_description ?? null,
+        new_description: row.new_en_description ?? null,
+        retail_description: row.retail_en_description ?? null,
         old_flags: normalizedStringList(row.old_flags),
-        // Editable add/remove should default to the currently edited DAT side.
-        new_flags: normalizedStringList(row.old_flags ?? row.new_flags),
+        new_flags: normalizedStringList(row.new_flags ?? row.old_flags ?? row.retail_flags),
+        retail_flags: normalizedStringList(row.retail_flags),
         old_jobs: normalizedStringList(row.old_jobs),
-        // Editable add/remove should default to the currently edited DAT side.
-        new_jobs: normalizedStringList(row.old_jobs ?? row.new_jobs),
-        old_description: row.old_description ?? null,
-        // Editable description should default to the currently edited DAT side.
-        new_description: row.old_description ?? row.new_description ?? null,
+        new_jobs: normalizedStringList(row.new_jobs ?? row.old_jobs ?? row.retail_jobs),
+        retail_jobs: normalizedStringList(row.retail_jobs),
+        old_valid_targets: normalizedStringList(row.old_valid_targets),
+        new_valid_targets: normalizedStringList(row.new_valid_targets ?? row.old_valid_targets ?? row.retail_valid_targets),
+        retail_valid_targets: normalizedStringList(row.retail_valid_targets),
+        old_slots: normalizedStringList(row.old_slots),
+        new_slots: normalizedStringList(row.new_slots ?? row.old_slots ?? row.retail_slots),
+        retail_slots: normalizedStringList(row.retail_slots),
       }));
       batch(() => {
         setRows(() => preparedRows);
@@ -742,6 +964,8 @@ function ItemDiffTool() {
         setOldCount(result.old_count);
         setNewCount(result.new_count);
         setChangedCount(result.changed_count);
+        setOldJapanesePath(result.old_japanese_path ?? "");
+        setNewJapanesePath(result.new_japanese_path ?? "");
         setSelectedRowId(preparedRows[0]?.row ?? null);
         setLastNotice(`Loaded ${result.changed_count} changed row(s).`);
         setRowsVersion((version) => version + 1);
@@ -753,7 +977,7 @@ function ItemDiffTool() {
     }
   };
 
-  const updateRowById = (rowId: number, updater: (row: EntityDiffRow) => void) => {
+  const updateRowById = (rowId: number, updater: (row: ItemDiffUiRow) => void) => {
     const index = rowIndexById().get(rowId);
     if (index === undefined) {
       return;
@@ -788,13 +1012,6 @@ function ItemDiffTool() {
 
   const selectRow = (rowId: number) => {
     setSelectedRowId(Number(rowId));
-    setManualEdit(true);
-  };
-
-  const setRowChoice = (rowId: number, choice: EntityDiffChoice) => {
-    updateRowById(rowId, (row) => {
-      row.choice = choice;
-    });
   };
 
   const setRowNewId = (rowId: number, value: string) => {
@@ -822,6 +1039,7 @@ function ItemDiffTool() {
   const setRowNewName = (rowId: number, value: string) => {
     updateRowById(rowId, (row) => {
       row.new_name = value;
+      row.new_en_name = value;
       row.choice = "New";
     });
   };
@@ -848,6 +1066,88 @@ function ItemDiffTool() {
     });
   };
 
+  const setOptionalU32Field = (
+    rowId: number,
+    value: string,
+    setter: (row: ItemDiffUiRow, value: number | null) => void,
+  ) => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      updateRowById(rowId, (row) => {
+        setter(row, null);
+        row.choice = "New";
+      });
+      return;
+    }
+
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) {
+      return;
+    }
+
+    const nextValue = Math.trunc(parsed);
+    if (nextValue < 0) {
+      return;
+    }
+
+    updateRowById(rowId, (row) => {
+      setter(row, nextValue);
+      row.choice = "New";
+    });
+  };
+
+  const setRowNewLevel = (rowId: number, value: string) => setOptionalU32Field(rowId, value, (row, nextValue) => {
+    row.new_level = nextValue;
+  });
+
+  const setRowNewShieldSize = (rowId: number, value: string) => setOptionalU32Field(rowId, value, (row, nextValue) => {
+    row.new_shield_size = nextValue;
+  });
+
+  const setRowNewMaxCharges = (rowId: number, value: string) => setOptionalU32Field(rowId, value, (row, nextValue) => {
+    row.new_max_charges = nextValue;
+  });
+
+  const setRowNewCastingTime = (rowId: number, value: string) => setOptionalU32Field(rowId, value, (row, nextValue) => {
+    row.new_casting_time = nextValue;
+  });
+
+  const setRowNewUseDelay = (rowId: number, value: string) => setOptionalU32Field(rowId, value, (row, nextValue) => {
+    row.new_use_delay = nextValue;
+  });
+
+  const setRowNewReuseDelay = (rowId: number, value: string) => setOptionalU32Field(rowId, value, (row, nextValue) => {
+    row.new_reuse_delay = nextValue;
+  });
+
+  const setRowNewItemType = (rowId: number, value: string) => {
+    updateRowById(rowId, (row) => {
+      row.new_item_type = value === "None" ? null : value;
+      row.choice = "New";
+    });
+  };
+
+  const setRowNewValidTargets = (rowId: number, values: string[]) => {
+    updateRowById(rowId, (row) => {
+      row.new_valid_targets = normalizedStringList(values);
+      row.choice = "New";
+    });
+  };
+
+  const setRowNewSlots = (rowId: number, values: string[]) => {
+    updateRowById(rowId, (row) => {
+      row.new_slots = normalizedStringList(values);
+      row.choice = "New";
+    });
+  };
+
+  const setRowNewIconBytes = (rowId: number, value: string) => {
+    updateRowById(rowId, (row) => {
+      row.new_icon_bytes = value;
+      row.choice = "New";
+    });
+  };
+
   const setRowNewFlags = (rowId: number, flags: string[]) => {
     const nextFlags = normalizedStringList(flags);
     updateRowById(rowId, (row) => {
@@ -867,6 +1167,21 @@ function ItemDiffTool() {
   const setRowNewDescription = (rowId: number, value: string) => {
     updateRowById(rowId, (row) => {
       row.new_description = value;
+      row.new_en_description = value;
+      row.choice = "New";
+    });
+  };
+
+  const setRowNewJapaneseName = (rowId: number, value: string) => {
+    updateRowById(rowId, (row) => {
+      row.new_jp_name = value;
+      row.choice = "New";
+    });
+  };
+
+  const setRowNewJapaneseDescription = (rowId: number, value: string) => {
+    updateRowById(rowId, (row) => {
+      row.new_jp_description = value;
       row.choice = "New";
     });
   };
@@ -911,26 +1226,6 @@ function ItemDiffTool() {
     }
 
     setRowNewJobs(rowId, [...hiddenJobs, ...Array.from(knownJobs)]);
-  };
-
-
-  const applyBulkChoice = (choice: EntityDiffChoice, onlyChanged: boolean) => {
-    const changed = changedRowIds();
-    setRows(produce((draft) => {
-      for (const row of draft) {
-        if (onlyChanged && !changed.has(row.row)) {
-          continue;
-        }
-
-        if (choice === "Old" && row.old_id !== null && row.old_name !== null) {
-          row.choice = "Old";
-        } else if (choice === "New" && row.new_id !== null && row.new_name !== null) {
-          row.choice = "New";
-        }
-
-      }
-    }));
-    setRowsVersion((version) => version + 1);
   };
 
   const removeFlagFromAllItems = async () => {
@@ -1043,7 +1338,7 @@ function ItemDiffTool() {
     }
 
     const sourcePath = editedPath();
-    const autoPaths = buildAutoSavePaths(sourcePath, getProjectFolder());
+    const autoPaths = buildAutoSavePaths(sourcePath, getProjectFolder() ?? null);
     if (!autoPaths) {
       await showMessage(
         "Set Project Folder and use files under a ROM path (for example ROM/2/13.DAT) so save can be auto-routed.",
@@ -1077,14 +1372,16 @@ function ItemDiffTool() {
 
       setLastSavedYamlPath(result.out_yaml_path);
       setLastSavedDatPath(result.out_dat_path ?? "");
+      setLastSavedJapaneseYamlPath(result.japanese_out_yaml_path ?? "");
+      setLastSavedJapaneseDatPath(result.japanese_out_dat_path ?? "");
       if (preferredEditedPath) {
         setEditedPath(preferredEditedPath);
       }
       setLastNotice(
-        `Saved ${result.written_count} entries. Edited source now points to: ${preferredEditedPath}`,
+        `Saved ${result.written_count} entries${result.japanese_out_dat_path || result.japanese_out_yaml_path ? " with JP pair" : ""}. Edited source now points to: ${preferredEditedPath}`,
       );
       await showMessage(
-        `Saved ${result.written_count} entries.\nYAML: ${result.out_yaml_path}${result.out_dat_path ? `\nDAT: ${result.out_dat_path}` : ""}`,
+        `Saved ${result.written_count} entries.\nYAML: ${result.out_yaml_path}${result.out_dat_path ? `\nDAT: ${result.out_dat_path}` : ""}${result.japanese_out_yaml_path ? `\nJP YAML: ${result.japanese_out_yaml_path}` : ""}${result.japanese_out_dat_path ? `\nJP DAT: ${result.japanese_out_dat_path}` : ""}`,
         { title: "Saved", kind: "info" },
       );
     } catch (err) {
@@ -1097,7 +1394,7 @@ function ItemDiffTool() {
   return (
     <div class="w-full">
       <div class="flex flex-wrap items-start justify-between gap-2">
-        <h1 class="m-0">Item Diff</h1>
+        <h1 class="m-0">Item Compare</h1>
         <div class="flex flex-col items-end gap-0.5 text-xs">
           <Show when={lastSavedYamlPath()}>
             <div class="max-w-[62vw] text-right truncate">
@@ -1109,67 +1406,92 @@ function ItemDiffTool() {
               Last saved DAT: <span class="font-mono text-green-200">{lastSavedDatPath()}</span>
             </div>
           </Show>
+          <Show when={lastSavedJapaneseYamlPath()}>
+            <div class="max-w-[62vw] text-right truncate">
+              Last saved JP YAML: <span class="font-mono text-green-200">{lastSavedJapaneseYamlPath()}</span>
+            </div>
+          </Show>
+          <Show when={lastSavedJapaneseDatPath()}>
+            <div class="max-w-[62vw] text-right truncate">
+              Last saved JP DAT: <span class="font-mono text-green-200">{lastSavedJapaneseDatPath()}</span>
+            </div>
+          </Show>
         </div>
       </div>
       <hr />
 
       <div class="mt-3 flex flex-col gap-2">
         <div class="rounded-md border border-slate-700/70 bg-slate-900/20 p-2 flex flex-col gap-2">
-          <div class="grid grid-cols-1 xl:grid-cols-2 gap-2">
-            <div class="min-w-0 flex items-center gap-2">
-              <button
-                class={`${compactButtonClass()} whitespace-nowrap`}
-                onClick={() => pickFile(
-                  setEditedFile,
-                  pickerDefaultPath(editedPath(), getOutputRoot(getProjectFolder())),
-                )}
-              >
-                Current DAT/YAML
-              </button>
-              <span class="font-mono text-xs truncate" title={editedPath() || "Not selected"}>
+          <div class="rounded-md border border-slate-700 bg-slate-950/40 px-3 py-2">
+            <div class="text-[12px] font-semibold uppercase tracking-[0.08em] text-slate-300">Item DATs</div>
+            <div class="mt-1 text-[12px] text-slate-400">
+              Pick an item DAT set. Kraken will compare your edited item DAT against retail and load Japanese text when both exist.
+            </div>
+            <Show
+              when={!itemDatOptions.loading}
+              fallback={<div class="mt-2 text-[12px] text-slate-400">Loading item DAT list...</div>}
+            >
+              <div class="mt-2 flex flex-wrap gap-2">
+                <For each={itemDatOptions() ?? []}>
+                  {(option) => (
+                    <button
+                      class={compactButtonClass(selectedDatType() === option.descriptor.type)}
+                      disabled={isResolvingDat() || isComparing()}
+                      title={option.has_jp ? "Compares paired English and Japanese item text." : "Compares English-only item text."}
+                      onClick={() => {
+                        void chooseItemDat(option);
+                      }}
+                    >
+                      {option.descriptor.type}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </Show>
+          </div>
+
+          <div class="min-w-0 flex flex-col gap-1 text-xs">
+            <div class="flex items-center gap-2">
+              <span class="uppercase tracking-[0.08em] text-slate-400">EN Source</span>
+              <span class="font-mono truncate" title={editedPath() || "Not selected"}>
                 {editedPath() || "Not selected"}
               </span>
             </div>
-
-            <div class="min-w-0 flex items-center gap-2">
-              <button
-                class={`${compactButtonClass()} whitespace-nowrap`}
-                onClick={() => pickFile(
-                  setNewRetailFile,
-                  pickerDefaultPath(newRetailPath(), getDatFolder()),
-                )}
-              >
-                Retail DAT/YAML
-              </button>
-              <span class="font-mono text-xs truncate" title={newRetailPath() || "Not selected"}>
+            <div class="flex items-center gap-2">
+              <span class="uppercase tracking-[0.08em] text-slate-400">Retail Source</span>
+              <span class="font-mono truncate" title={newRetailPath() || "Not selected"}>
                 {newRetailPath() || "Not selected"}
               </span>
             </div>
+            <Show when={oldJapanesePath()}>
+              <div class="flex items-center gap-2">
+                <span class="uppercase tracking-[0.08em] text-slate-400">JP Source</span>
+                <span class="font-mono truncate" title={oldJapanesePath()}>
+                  {oldJapanesePath()}
+                </span>
+              </div>
+            </Show>
+            <Show when={newJapanesePath()}>
+              <div class="flex items-center gap-2">
+                <span class="uppercase tracking-[0.08em] text-slate-400">Retail JP</span>
+                <span class="font-mono truncate" title={newJapanesePath()}>
+                  {newJapanesePath()}
+                </span>
+              </div>
+            </Show>
           </div>
 
           <div class="text-[11px] text-slate-400">
-            New Retail is read-only input. Save merged only writes to your edited-side output.
+            Retail is read-only input. Save merged only writes to your edited-side output.
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
-            <button class={compactButtonClass()} disabled={isComparing()} onClick={runCompare}>
-              {isComparing() ? "Comparing..." : "Compare"}
-            </button>
-
             <button
-              class={compactButtonClass(showChangedOnly())}
-              disabled={rows.length === 0}
-              onClick={() => setShowChangedOnly(!showChangedOnly())}
+              class={compactButtonClass()}
+              disabled={isComparing() || isResolvingDat() || !editedPath() || !newRetailPath()}
+              onClick={runCompare}
             >
-              {showChangedOnly() ? "Showing diff rows" : "Showing all rows"}
-            </button>
-
-            <button
-              class={compactButtonClass(manualEdit())}
-              disabled={rows.length === 0}
-              onClick={() => setManualEdit(!manualEdit())}
-            >
-              {manualEdit() ? "Manual edit: ON" : "Manual edit: OFF"}
+              {isComparing() ? "Reloading..." : "Reload"}
             </button>
 
             <button
@@ -1180,6 +1502,16 @@ function ItemDiffTool() {
               {isSaving() ? "Saving..." : "Save merged"}
             </button>
 
+            <Show when={rows.length > 0}>
+              <input
+                class="m-0 min-w-[12rem] flex-1 md:flex-none md:w-64 py-0.5 px-2 text-sm rounded-md border border-slate-500 bg-slate-800 text-slate-100 focus:border-slate-300 focus:outline-none"
+                name="item-compare-search"
+                autocomplete="off"
+                placeholder="Search rows..."
+                value={tableFilter()}
+                onInput={(e) => setTableFilter(e.currentTarget.value)}
+              />
+            </Show>
           </div>
 
           <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
@@ -1187,8 +1519,10 @@ function ItemDiffTool() {
               <div class="italic text-slate-300">{lastNotice()}</div>
             </Show>
             <Show when={rows.length > 0}>
-              <div class="text-slate-300">
-                Current: {oldCount()} | Retail: {newCount()} | Changed: {changedCount()}
+              <div class="flex flex-col items-end gap-1">
+                <div class="text-slate-300">
+                  Current: {oldCount()} | Retail: {newCount()} | Changed: {changedCount()}
+                </div>
               </div>
             </Show>
           </div>
@@ -1272,12 +1606,21 @@ function ItemDiffTool() {
                   <For each={visibleRows()}>
                     {(row) => (
                       <tr
-                        class={`${isRetailChangedRow(row, retailSnapshotByRow()[row.row]) ? "bg-slate-700/40" : ""} ${selectedRowId() === row.row ? "bg-sky-900/35" : ""} cursor-pointer`}
+                        class={`${isRetailChangedRow(row, retailSnapshotByRow()[row.row]) ? "bg-slate-700/40" : ""} ${isChangedRow(row) ? "bg-rose-950/20" : ""} ${selectedRowId() === row.row ? "bg-sky-900/35" : ""} cursor-pointer`}
                         onMouseDown={() => selectRow(row.row)}
                         onClick={() => selectRow(row.row)}
                       >
-                        <td class="font-mono whitespace-nowrap tabular-nums overflow-visible">{row.old_id ?? "-"}</td>
-                        <td class="truncate" title={row.old_name ?? "-"}>{row.old_name ?? "-"}</td>
+                        <td class="font-mono whitespace-nowrap tabular-nums overflow-visible">{row.new_id ?? row.old_id ?? "-"}</td>
+                        <td class="truncate" title={displayItemName(row.new_en_name ?? row.old_en_name ?? row.new_jp_name ?? row.old_jp_name)}>
+                          <span class={isEmptyItemName(row.new_en_name ?? row.old_en_name) ? "text-slate-400 italic" : ""}>
+                            {displayItemName(row.new_en_name ?? row.old_en_name ?? row.new_jp_name ?? row.old_jp_name)}
+                          </span>
+                          <Show when={row.has_japanese && shouldShowJapaneseName(row.new_en_name ?? row.old_en_name, row.new_jp_name ?? row.old_jp_name)}>
+                            <span class="ml-2 text-[11px] text-slate-400">
+                              {displayItemName(row.new_jp_name ?? row.old_jp_name, "-")}
+                            </span>
+                          </Show>
+                        </td>
                       </tr>
                     )}
                   </For>
@@ -1299,29 +1642,71 @@ function ItemDiffTool() {
                 {(row) => {
                   const rowId = row.row;
                   const retailSnapshot = () => retailSnapshotByRow()[rowId];
-                  const hasRetailEntry = () => retailSnapshot()?.has_retail_entry ?? (row.new_id !== null || row.new_name !== null);
-                  const retailId = () => retailSnapshot()?.id ?? row.new_id;
-                  const retailName = () => retailSnapshot()?.name ?? row.new_name;
-                  const retailStackSize = () => retailSnapshot()?.stack_size ?? row.new_stack_size;
+                  const hasRetailEntry = () => retailSnapshot()?.has_retail_entry ?? row.has_retail_entry;
+                  const retailId = () => retailSnapshot()?.id ?? row.retail_id;
+                  const retailName = () => retailSnapshot()?.name ?? row.retail_en_name;
+                  const retailStackSize = () => retailSnapshot()?.stack_size ?? row.retail_stack_size;
                   const currentFlags = () => normalizedStringList(row.old_flags ?? row.new_flags);
                   const targetFlags = () => normalizedStringList(row.new_flags ?? row.old_flags);
                   const retailFlags = () => normalizedStringList(retailSnapshot()?.flags ?? []);
                   const currentJobs = () => normalizedStringList(row.old_jobs ?? row.new_jobs);
                   const targetJobs = () => normalizedStringList(row.new_jobs ?? row.old_jobs);
                   const retailJobs = () => normalizedStringList(retailSnapshot()?.jobs ?? []);
-                  const currentDescription = () => row.new_description ?? row.old_description ?? "";
-                  const retailDescription = () => retailSnapshot()?.description ?? "";
+                  const currentDescription = () => row.new_en_description ?? row.old_en_description ?? "";
+                  const retailDescription = () => retailSnapshot()?.en_description ?? row.retail_en_description ?? "";
+                  const retailLevel = () => retailSnapshot()?.level ?? row.retail_level;
+                  const retailItemType = () => retailSnapshot()?.item_type ?? row.retail_item_type;
+                  const retailShieldSize = () => retailSnapshot()?.shield_size ?? row.retail_shield_size;
+                  const retailMaxCharges = () => retailSnapshot()?.max_charges ?? row.retail_max_charges;
+                  const retailCastingTime = () => retailSnapshot()?.casting_time ?? row.retail_casting_time;
+                  const retailUseDelay = () => retailSnapshot()?.use_delay ?? row.retail_use_delay;
+                  const retailReuseDelay = () => retailSnapshot()?.reuse_delay ?? row.retail_reuse_delay;
+                  const retailValidTargets = () => normalizedStringList(retailSnapshot()?.valid_targets ?? row.retail_valid_targets);
+                  const retailSlots = () => normalizedStringList(retailSnapshot()?.slots ?? row.retail_slots);
+                  const retailIconBytes = () => retailSnapshot()?.icon_bytes ?? row.retail_icon_bytes ?? "";
+                  const retailJpName = () => retailSnapshot()?.jp_name ?? row.retail_jp_name ?? "";
+                  const retailJpDescription = () => retailSnapshot()?.jp_description ?? row.retail_jp_description ?? "";
                   const editedIconUrl = () => row.old_id !== null
                     ? `https://static.ffxiah.com/images/icon/${row.old_id}.png`
                     : null;
                   const idDiffersFromRetail = () => row.old_id !== retailId();
-                  const nameDiffersFromRetail = () => row.old_name !== retailName();
+                  const nameDiffersFromRetail = () => row.old_en_name !== retailName();
                   const stackDiffersFromRetail = () => row.old_stack_size !== retailStackSize();
+                  const levelDiffersFromRetail = () => row.old_level !== retailLevel();
+                  const itemTypeDiffersFromRetail = () => (row.old_item_type ?? null) !== (retailItemType() ?? null);
+                  const shieldSizeDiffersFromRetail = () => row.old_shield_size !== retailShieldSize();
+                  const maxChargesDiffersFromRetail = () => row.old_max_charges !== retailMaxCharges();
+                  const castingTimeDiffersFromRetail = () => row.old_casting_time !== retailCastingTime();
+                  const useDelayDiffersFromRetail = () => row.old_use_delay !== retailUseDelay();
+                  const reuseDelayDiffersFromRetail = () => row.old_reuse_delay !== retailReuseDelay();
+                  const validTargetsDifferFromRetail = () => !arraysEqual(normalizedStringList(row.old_valid_targets), retailValidTargets());
+                  const slotsDifferFromRetail = () => !arraysEqual(normalizedStringList(row.old_slots), retailSlots());
+                  const iconBytesDifferFromRetail = () => (row.old_icon_bytes ?? "") !== retailIconBytes();
                   const flagsDifferFromRetail = () => !arraysEqual(currentFlags(), retailFlags());
                   const jobsDifferFromRetail = () => !arraysEqual(currentJobs(), retailJobs());
                   const descriptionDiffersFromRetail = () => currentDescription() !== retailDescription();
+                  const jpNameDiffersFromRetail = () => (row.old_jp_name ?? "") !== retailJpName();
+                  const jpDescriptionDiffersFromRetail = () => (row.old_jp_description ?? "") !== retailJpDescription();
                   const flagOptions = Array.from(new Set([...ITEM_FLAG_OPTIONS, ...(row.old_flags ?? []), ...(row.new_flags ?? [])])).sort();
                   const jobOptions = ITEM_JOB_OPTIONS;
+                  const itemTypeOptions = Array.from(new Set([
+                    ...ITEM_TYPE_OPTIONS,
+                    ...(row.old_item_type ? [row.old_item_type] : []),
+                    ...(row.new_item_type ? [row.new_item_type] : []),
+                    ...(row.retail_item_type ? [row.retail_item_type] : []),
+                  ])).sort();
+                  const validTargetPresetOptions = Array.from(new Map([
+                    ...VALID_TARGET_PRESETS,
+                    { label: "Current", values: normalizedStringList(row.old_valid_targets) },
+                    { label: "Retail", values: retailValidTargets() },
+                    { label: "Edited", values: normalizedStringList(row.new_valid_targets) },
+                  ].map((preset) => [validTargetPresetKey(preset.values), preset])).values());
+                  const slotPresetOptions = Array.from(new Map([
+                    ...SLOT_PRESETS,
+                    { label: "Current", values: normalizedStringList(row.old_slots) },
+                    { label: "Retail", values: retailSlots() },
+                    { label: "Edited", values: normalizedStringList(row.new_slots) },
+                  ].map((preset) => [slotPresetKey(preset.values), preset])).values());
                   const filteredFlagOptions = flagOptions;
                   const filteredJobOptions = jobOptions;
                   const addedFlags = () => targetFlags().filter((flag) => !currentFlags().includes(flag));
@@ -1333,19 +1718,165 @@ function ItemDiffTool() {
                   return (
                     <div class="flex flex-col gap-3">
                       <div class="flex flex-wrap items-center justify-between gap-2">
-                        <div class="text-sm font-semibold">Row {row.row}: {row.new_name ?? row.old_name ?? "Unknown item"}</div>
-                        <input
-                          class="m-0 w-56 max-w-[46vw] py-0.5 px-2 text-sm rounded-md border border-slate-500 bg-slate-800 text-slate-100 focus:border-slate-300 focus:outline-none"
-                          placeholder="Filter rows..."
-                          value={tableFilter()}
-                          onInput={(e) => setTableFilter(e.currentTarget.value)}
-                        />
+                        <div class="text-sm font-semibold">Row {row.row}: {row.new_en_name ?? row.old_en_name ?? "Unknown item"}</div>
                       </div>
-                      <Show when={!manualEdit()}>
-                        <div class="text-xs text-slate-400">Manual edit is OFF. Turn it on above to edit ID, name, stack, flags, jobs, and description.</div>
-                      </Show>
 
                       <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm items-start">
+                        <div class="border border-slate-700 rounded-md p-2">
+                          <div class="mb-2 font-semibold text-slate-200">Edit</div>
+                          <div class="grid grid-cols-1 xl:grid-cols-2 gap-x-4 gap-y-2">
+                            <div class="grid grid-cols-[minmax(5.75rem,auto)_minmax(0,1fr)] gap-y-2 gap-x-2 content-start xl:col-span-2">
+                              <div class="text-slate-300">EN Name:</div>
+                              <input
+                                class={`m-0 w-full py-0 px-2 text-sm rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_en_name !== row.new_en_name)}`}
+                                type="text"
+                                name={`item-diff-en-name-${rowId}`}
+                                autocomplete="off"
+                                value={row.new_en_name ?? ""}
+                                title={displayItemName(row.new_en_name ?? row.old_en_name)}
+                                onInput={(e) => setRowNewName(rowId, e.currentTarget.value)}
+                              />
+
+                              <Show when={row.has_japanese}>
+                                <>
+                                  <div class="text-slate-300">JP Name:</div>
+                                  <input
+                                    class={`m-0 w-full py-0 px-2 text-sm rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_jp_name ?? null) !== (row.new_jp_name ?? null))}`}
+                                    type="text"
+                                    name={`item-diff-jp-name-${rowId}`}
+                                    autocomplete="off"
+                                    value={row.new_jp_name ?? ""}
+                                    title={displayItemName(row.new_jp_name ?? row.old_jp_name)}
+                                    onInput={(e) => setRowNewJapaneseName(rowId, e.currentTarget.value)}
+                                  />
+                                </>
+                              </Show>
+                            </div>
+
+                            <div class="grid grid-cols-[minmax(5.75rem,auto)_minmax(0,1fr)] gap-y-2 gap-x-2 content-start">
+                            <div class="text-slate-300">ID:</div>
+                            <input
+                              class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_id !== row.new_id)}`}
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={row.new_id ?? ""}
+                              onInput={(e) => setRowNewId(rowId, e.currentTarget.value)}
+                            />
+
+                            <div class="text-slate-300">Stack:</div>
+                            <input
+                              class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_stack_size !== row.new_stack_size)}`}
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={row.new_stack_size ?? ""}
+                              onInput={(e) => setRowNewStackSize(rowId, e.currentTarget.value)}
+                            />
+
+                            <div class="text-slate-300">Item Type:</div>
+                            <select
+                              class={`m-0 w-full py-0 px-2 text-sm rounded-md border border-slate-500 bg-slate-800 text-slate-100 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_item_type ?? null) !== (row.new_item_type ?? null))}`}
+                              value={row.new_item_type ?? "None"}
+                              onChange={(e) => setRowNewItemType(rowId, e.currentTarget.value)}
+                            >
+                              <For each={itemTypeOptions}>
+                                {(itemType) => <option value={itemType}>{itemType}</option>}
+                              </For>
+                            </select>
+
+                            <div class="text-slate-300">Valid Targets:</div>
+                            <select
+                              class={`m-0 w-full py-0 px-2 text-sm rounded-md border border-slate-500 bg-slate-800 text-slate-100 focus:border-slate-300 focus:outline-none ${newFieldClass(!arraysEqual(row.old_valid_targets, row.new_valid_targets))}`}
+                              value={validTargetPresetKey(row.new_valid_targets ?? row.old_valid_targets)}
+                              onChange={(e) => {
+                                const selectedPreset = validTargetPresetOptions.find((preset) => validTargetPresetKey(preset.values) === e.currentTarget.value);
+                                setRowNewValidTargets(rowId, selectedPreset?.values ?? []);
+                              }}
+                            >
+                              <For each={validTargetPresetOptions}>
+                                {(preset) => <option value={validTargetPresetKey(preset.values)}>{preset.label}</option>}
+                              </For>
+                            </select>
+
+                            <div class="text-slate-300">Slots:</div>
+                            <select
+                              class={`m-0 w-full py-0 px-2 text-sm rounded-md border border-slate-500 bg-slate-800 text-slate-100 focus:border-slate-300 focus:outline-none ${newFieldClass(!arraysEqual(row.old_slots, row.new_slots))}`}
+                              value={slotPresetKey(row.new_slots ?? row.old_slots)}
+                              onChange={(e) => {
+                                const selectedPreset = slotPresetOptions.find((preset) => slotPresetKey(preset.values) === e.currentTarget.value);
+                                setRowNewSlots(rowId, selectedPreset?.values ?? []);
+                              }}
+                            >
+                              <For each={slotPresetOptions}>
+                                {(preset) => <option value={slotPresetKey(preset.values)}>{preset.label}</option>}
+                              </For>
+                            </select>
+                            </div>
+
+                            <div class="grid grid-cols-[minmax(5.75rem,auto)_minmax(0,1fr)] gap-y-2 gap-x-2 content-start">
+                            <div class="text-slate-300">Level:</div>
+                            <input
+                              class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_level !== row.new_level)}`}
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={row.new_level ?? ""}
+                              onInput={(e) => setRowNewLevel(rowId, e.currentTarget.value)}
+                            />
+
+                            <div class="text-slate-300">Shield Size:</div>
+                            <input
+                              class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_shield_size !== row.new_shield_size)}`}
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={row.new_shield_size ?? ""}
+                              onInput={(e) => setRowNewShieldSize(rowId, e.currentTarget.value)}
+                            />
+
+                            <div class="text-slate-300">Max Charges:</div>
+                            <input
+                              class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_max_charges !== row.new_max_charges)}`}
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={row.new_max_charges ?? ""}
+                              onInput={(e) => setRowNewMaxCharges(rowId, e.currentTarget.value)}
+                            />
+
+                            <div class="text-slate-300">Casting Time:</div>
+                            <input
+                              class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_casting_time !== row.new_casting_time)}`}
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={row.new_casting_time ?? ""}
+                              onInput={(e) => setRowNewCastingTime(rowId, e.currentTarget.value)}
+                            />
+
+                            <div class="text-slate-300">Use Delay:</div>
+                            <input
+                              class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_use_delay !== row.new_use_delay)}`}
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={row.new_use_delay ?? ""}
+                              onInput={(e) => setRowNewUseDelay(rowId, e.currentTarget.value)}
+                            />
+
+                            <div class="text-slate-300">Reuse Delay:</div>
+                            <input
+                              class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_reuse_delay !== row.new_reuse_delay)}`}
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={row.new_reuse_delay ?? ""}
+                              onInput={(e) => setRowNewReuseDelay(rowId, e.currentTarget.value)}
+                            />
+                          </div>
+                        </div>
+                        </div>
                         <div class={retailDiffPanelClass(idDiffersFromRetail() || nameDiffersFromRetail() || stackDiffersFromRetail())}>
                           <div class="mb-2 font-semibold text-slate-200">Current</div>
                           <div class="flex items-start gap-3">
@@ -1366,7 +1897,7 @@ function ItemDiffTool() {
                               <div class={`font-mono ${retailDiffValueClass(idDiffersFromRetail())}`}>{row.old_id ?? "-"}</div>
 
                               <div class="text-slate-300">Name:</div>
-                              <div class={retailDiffValueClass(nameDiffersFromRetail())}>{row.old_name ?? "-"}</div>
+                              <div class={retailDiffValueClass(nameDiffersFromRetail())}>{row.old_en_name ?? "-"}</div>
 
                               <div class="text-slate-300">Stack:</div>
                               <div class={`font-mono ${retailDiffValueClass(stackDiffersFromRetail())}`}>{row.old_stack_size ?? "-"}</div>
@@ -1374,39 +1905,108 @@ function ItemDiffTool() {
                           </div>
                         </div>
 
-                        <div class="border border-slate-700 rounded-md p-2">
-                          <div class="mb-2 font-semibold text-slate-200">New</div>
+                      </div>
+
+                      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 text-sm items-start">
+                        <div class={retailDiffPanelClass(
+                          levelDiffersFromRetail() ||
+                          itemTypeDiffersFromRetail() ||
+                          validTargetsDifferFromRetail() ||
+                          slotsDifferFromRetail() ||
+                          shieldSizeDiffersFromRetail() ||
+                          maxChargesDiffersFromRetail() ||
+                          castingTimeDiffersFromRetail() ||
+                          useDelayDiffersFromRetail() ||
+                          reuseDelayDiffersFromRetail()
+                        )}>
+                          <div class="mb-2 font-semibold text-slate-200">Current Fields</div>
                           <div class="grid grid-cols-[8rem_minmax(0,1fr)] gap-y-1 gap-x-2">
-                            <div class="text-slate-300">ID:</div>
-                            <input
-                              class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_id !== row.new_id)}`}
-                              type="number"
-                              min={0}
-                              step={1}
-                              disabled={!manualEdit()}
-                              value={row.new_id ?? ""}
-                              onInput={(e) => setRowNewId(rowId, e.currentTarget.value)}
-                            />
+                            <div class="text-slate-300">Item Type:</div>
+                            <div class={retailDiffValueClass(itemTypeDiffersFromRetail())}>{row.old_item_type ?? "-"}</div>
+                            <div class="text-slate-300">Valid Targets:</div>
+                            <div class={retailDiffValueClass(validTargetsDifferFromRetail())}>{normalizedStringList(row.old_valid_targets).join(", ") || "-"}</div>
+                            <div class="text-slate-300">Slots:</div>
+                            <div class={retailDiffValueClass(slotsDifferFromRetail())}>{normalizedStringList(row.old_slots).join(", ") || "-"}</div>
+                            <div class="text-slate-300">Level:</div>
+                            <div class={`font-mono ${retailDiffValueClass(levelDiffersFromRetail())}`}>{row.old_level ?? "-"}</div>
+                            <div class="text-slate-300">Shield Size:</div>
+                            <div class={`font-mono ${retailDiffValueClass(shieldSizeDiffersFromRetail())}`}>{row.old_shield_size ?? "-"}</div>
+                            <div class="text-slate-300">Max Charges:</div>
+                            <div class={`font-mono ${retailDiffValueClass(maxChargesDiffersFromRetail())}`}>{row.old_max_charges ?? "-"}</div>
+                            <div class="text-slate-300">Casting Time:</div>
+                            <div class={`font-mono ${retailDiffValueClass(castingTimeDiffersFromRetail())}`}>{row.old_casting_time ?? "-"}</div>
+                            <div class="text-slate-300">Use Delay:</div>
+                            <div class={`font-mono ${retailDiffValueClass(useDelayDiffersFromRetail())}`}>{row.old_use_delay ?? "-"}</div>
+                            <div class="text-slate-300">Reuse Delay:</div>
+                            <div class={`font-mono ${retailDiffValueClass(reuseDelayDiffersFromRetail())}`}>{row.old_reuse_delay ?? "-"}</div>
+                          </div>
+                        </div>
 
-                            <div class="text-slate-300">Name:</div>
-                            <input
-                              class={`m-0 w-full py-0 px-2 text-sm rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_name !== row.new_name)}`}
-                              type="text"
-                              disabled={!manualEdit()}
-                              value={row.new_name ?? ""}
-                              onInput={(e) => setRowNewName(rowId, e.currentTarget.value)}
-                            />
+                        <div class={retailDiffPanelClass(
+                          levelDiffersFromRetail() ||
+                          itemTypeDiffersFromRetail() ||
+                          validTargetsDifferFromRetail() ||
+                          slotsDifferFromRetail() ||
+                          shieldSizeDiffersFromRetail() ||
+                          maxChargesDiffersFromRetail() ||
+                          castingTimeDiffersFromRetail() ||
+                          useDelayDiffersFromRetail() ||
+                          reuseDelayDiffersFromRetail()
+                        )}>
+                          <div class="mb-2 font-semibold text-slate-200">Retail Fields</div>
+                          <Show
+                            when={hasRetailEntry()}
+                            fallback={<div class="text-sm text-slate-400">Retail row missing for this item.</div>}
+                          >
+                            <div class="grid grid-cols-[8rem_minmax(0,1fr)] gap-y-1 gap-x-2">
+                              <div class="text-slate-300">Item Type:</div>
+                              <div class={retailDiffValueClass(itemTypeDiffersFromRetail())}>{retailItemType() ?? "-"}</div>
+                              <div class="text-slate-300">Valid Targets:</div>
+                              <div class={retailDiffValueClass(validTargetsDifferFromRetail())}>{retailValidTargets().join(", ") || "-"}</div>
+                              <div class="text-slate-300">Slots:</div>
+                              <div class={retailDiffValueClass(slotsDifferFromRetail())}>{retailSlots().join(", ") || "-"}</div>
+                              <div class="text-slate-300">Level:</div>
+                              <div class={`font-mono ${retailDiffValueClass(levelDiffersFromRetail())}`}>{retailLevel() ?? "-"}</div>
+                              <div class="text-slate-300">Shield Size:</div>
+                              <div class={`font-mono ${retailDiffValueClass(shieldSizeDiffersFromRetail())}`}>{retailShieldSize() ?? "-"}</div>
+                              <div class="text-slate-300">Max Charges:</div>
+                              <div class={`font-mono ${retailDiffValueClass(maxChargesDiffersFromRetail())}`}>{retailMaxCharges() ?? "-"}</div>
+                              <div class="text-slate-300">Casting Time:</div>
+                              <div class={`font-mono ${retailDiffValueClass(castingTimeDiffersFromRetail())}`}>{retailCastingTime() ?? "-"}</div>
+                              <div class="text-slate-300">Use Delay:</div>
+                              <div class={`font-mono ${retailDiffValueClass(useDelayDiffersFromRetail())}`}>{retailUseDelay() ?? "-"}</div>
+                              <div class="text-slate-300">Reuse Delay:</div>
+                              <div class={`font-mono ${retailDiffValueClass(reuseDelayDiffersFromRetail())}`}>{retailReuseDelay() ?? "-"}</div>
+                            </div>
+                          </Show>
+                        </div>
 
-                            <div class="text-slate-300">Stack:</div>
-                            <input
-                              class={`hide-spin-buttons m-0 w-full py-0 px-2 text-sm font-mono rounded-md border border-slate-500 focus:border-slate-300 focus:outline-none ${newFieldClass(row.old_stack_size !== row.new_stack_size)}`}
-                              type="number"
-                              min={0}
-                              step={1}
-                              disabled={!manualEdit()}
-                              value={row.new_stack_size ?? ""}
-                              onInput={(e) => setRowNewStackSize(rowId, e.currentTarget.value)}
-                            />
+                        <div class={retailDiffPanelClass(iconBytesDifferFromRetail()) + " lg:col-span-2"}>
+                          <div class="mb-2 text-sm font-semibold text-slate-200">Icon Bytes</div>
+                          <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                            <div>
+                              <div class="mb-1 text-xs font-semibold text-slate-300">Edit</div>
+                              <textarea
+                                class={`m-0 min-h-48 w-full resize-y rounded-md border bg-slate-800 px-2 py-1 font-mono text-[11px] leading-4 text-slate-100 focus:border-slate-300 focus:outline-none ${newFieldClass((row.old_icon_bytes ?? null) !== (row.new_icon_bytes ?? null))}`}
+                                spellcheck={false}
+                                value={row.new_icon_bytes ?? ""}
+                                onInput={(e) => setRowNewIconBytes(rowId, e.currentTarget.value)}
+                              />
+                            </div>
+                            <div>
+                              <div class="mb-1 text-xs font-semibold text-slate-300">Retail</div>
+                              <Show
+                                when={hasRetailEntry()}
+                                fallback={<div class="text-sm text-slate-400">Retail row missing for this item.</div>}
+                              >
+                                <textarea
+                                  class={`m-0 min-h-48 w-full resize-y rounded-md border bg-slate-900 px-2 py-1 font-mono text-[11px] leading-4 text-slate-100 focus:outline-none ${iconBytesDifferFromRetail() ? "border-amber-500/70" : "border-slate-700"}`}
+                                  readonly
+                                  spellcheck={false}
+                                  value={retailIconBytes()}
+                                />
+                              </Show>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1524,11 +2124,10 @@ function ItemDiffTool() {
                                     <input
                                       type="checkbox"
                                       class="mt-1"
-                                      disabled={!manualEdit()}
                                       checked={targetFlags().includes(flag)}
                                       onChange={(e) => toggleRowNewFlag(rowId, flag, e.currentTarget.checked)}
                                     />
-                                    <span class="min-w-0 break-words" title={flag}>{flag}</span>
+                                    <span class={`min-w-0 break-words ${listChangeTextClass(currentFlags(), targetFlags(), flag)}`} title={flag}>{flag}</span>
                                   </label>
                                 )}
                               </For>
@@ -1555,11 +2154,10 @@ function ItemDiffTool() {
                                       <input
                                         type="checkbox"
                                         class="mt-1"
-                                        disabled={!manualEdit()}
                                         checked={targetJobs().includes(job)}
                                         onChange={(e) => toggleRowNewJob(rowId, job, e.currentTarget.checked)}
                                       />
-                                      <span class="min-w-0 break-words" title={job}>{job}</span>
+                                      <span class={`min-w-0 break-words ${listChangeTextClass(currentJobs(), targetJobs(), job)}`} title={job}>{job}</span>
                                     </label>
                                   )}
                                 </For>
@@ -1574,18 +2172,17 @@ function ItemDiffTool() {
                           <div class="text-sm font-semibold">Description</div>
                           <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
                             <div class={retailDiffPanelClass(descriptionDiffersFromRetail())}>
-                              <div class="mb-2 text-sm font-semibold text-slate-200">Current (editable)</div>
+                              <div class="mb-2 text-sm font-semibold text-slate-200">English Current (editable)</div>
                               <textarea
                                 class={`m-0 min-h-40 w-full resize-y px-2 py-1 text-sm rounded-md border bg-slate-800 text-slate-100 focus:border-slate-300 focus:outline-none ${descriptionDiffersFromRetail() ? "border-amber-500/70" : "border-slate-500"}`}
                                 rows={5}
-                                disabled={!manualEdit()}
                                 value={currentDescription()}
                                 onInput={(e) => setRowNewDescription(rowId, e.currentTarget.value)}
                               />
                             </div>
 
                             <div class={retailDiffPanelClass(descriptionDiffersFromRetail())}>
-                              <div class="mb-2 text-sm font-semibold text-slate-200">Retail (read-only)</div>
+                              <div class="mb-2 text-sm font-semibold text-slate-200">English Retail (read-only)</div>
                               <Show
                                 when={hasRetailEntry()}
                                 fallback={<div class="text-sm text-slate-400">Retail row missing for this item.</div>}
@@ -1599,6 +2196,35 @@ function ItemDiffTool() {
                               </Show>
                             </div>
                           </div>
+
+                          <Show when={row.has_japanese}>
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+                              <div class={retailDiffPanelClass(jpNameDiffersFromRetail() || jpDescriptionDiffersFromRetail())}>
+                                <div class="mb-2 text-sm font-semibold text-slate-200">Japanese Current (editable)</div>
+                                <textarea
+                                  class={`m-0 min-h-36 w-full resize-y px-2 py-1 text-sm rounded-md border bg-slate-800 text-slate-100 focus:border-slate-300 focus:outline-none ${jpDescriptionDiffersFromRetail() ? "border-amber-500/70" : "border-slate-500"}`}
+                                  rows={5}
+                                  value={row.new_jp_description ?? row.old_jp_description ?? ""}
+                                  onInput={(e) => setRowNewJapaneseDescription(rowId, e.currentTarget.value)}
+                                />
+                              </div>
+
+                              <div class={retailDiffPanelClass(jpDescriptionDiffersFromRetail())}>
+                                <div class="mb-2 text-sm font-semibold text-slate-200">Japanese Retail (read-only)</div>
+                                <Show
+                                  when={hasRetailEntry()}
+                                  fallback={<div class="text-sm text-slate-400">Retail row missing for this item.</div>}
+                                >
+                                  <textarea
+                                    class="m-0 min-h-36 w-full resize-y px-2 py-1 text-sm rounded-md border border-slate-700 bg-slate-900 text-slate-100 focus:outline-none"
+                                    rows={5}
+                                    readonly
+                                    value={retailJpDescription()}
+                                  />
+                                </Show>
+                              </div>
+                            </div>
+                          </Show>
                         </div>
                       </div>
                     </div>

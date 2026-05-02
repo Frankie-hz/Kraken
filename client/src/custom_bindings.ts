@@ -345,11 +345,15 @@ export interface ItemDiffSaveResult {
     written_count: number;
     kept_old_count: number;
     kept_new_count: number;
+    saved_english: boolean;
+    saved_japanese: boolean;
     out_yaml_path: string;
     out_dat_path: string | null;
     japanese_out_yaml_path: string | null;
     japanese_out_dat_path: string | null;
 }
+
+export type ItemDiffSaveTarget = "both" | "english" | "japanese";
 
 export interface SpellDiffSaveResult {
     written_count: number;
@@ -544,11 +548,12 @@ export async function saveItemDiff(
     rows: ItemDiffRow[],
     outYamlPath: string,
     outDatPath: string | null,
+    saveTarget: ItemDiffSaveTarget = "both",
 ): Promise<Result<ItemDiffSaveResult, any>> {
     try {
         return {
             status: "ok",
-            data: await TAURI_INVOKE("save_item_diff", { oldPath, newPath, rows, outYamlPath, outDatPath }),
+            data: await TAURI_INVOKE("save_item_diff", { oldPath, newPath, rows, outYamlPath, outDatPath, saveTarget }),
         };
     } catch (e) {
         if (e instanceof Error) throw e;

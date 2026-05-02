@@ -322,6 +322,8 @@ pub struct ItemDiffSaveResult {
     pub written_count: usize,
     pub kept_old_count: usize,
     pub kept_new_count: usize,
+    pub saved_english: bool,
+    pub saved_japanese: bool,
     pub out_yaml_path: String,
     pub out_dat_path: Option<String>,
     pub japanese_out_yaml_path: Option<String>,
@@ -677,7 +679,8 @@ fn item_diff_values_match_current_identity(
     current: &ItemDiffValues,
     retail: &ItemDiffValues,
 ) -> bool {
-    current.stack_size == retail.stack_size
+    current.id == retail.id
+        && current.stack_size == retail.stack_size
         && current.level == retail.level
         && current.item_type == retail.item_type
         && current.shield_size == retail.shield_size
@@ -690,6 +693,7 @@ fn item_diff_values_match_current_identity(
         && current.icon_bytes == retail.icon_bytes
         && current.flags == retail.flags
         && current.jobs == retail.jobs
+        && current.en_name == retail.en_name
         && current.en_description == retail.en_description
         && current.jp_name == retail.jp_name
         && current.jp_description == retail.jp_description
@@ -944,11 +948,19 @@ pub fn save_item_diff(
     old_japanese_path: Option<PathBuf>,
     new_japanese_path: Option<PathBuf>,
     rows: Vec<ItemDiffRow>,
+    save_english: bool,
+    save_japanese: bool,
     out_yaml_path: PathBuf,
     out_dat_path: Option<PathBuf>,
     japanese_out_yaml_path: Option<PathBuf>,
     japanese_out_dat_path: Option<PathBuf>,
 ) -> Result<ItemDiffSaveResult> {
+    if !save_english && !save_japanese {
+        return Err(anyhow::anyhow!(
+            "Select at least one item diff save target."
+        ));
+    }
+
     let old_data = load_item_table(&old_path)?;
     let new_data = load_item_table(&new_path)?;
     let old_japanese_data = old_japanese_path
@@ -1036,76 +1048,88 @@ pub fn save_item_diff(
         }
     }
 
-    let merged = ItemInfoTableYaml {
-        items: merged_items,
-    };
+    let (out_yaml_path_string, written_dat) = if save_english {
+        let merged = ItemInfoTableYaml {
+            items: merged_items.clone(),
+        };
 
-    if let Some(parent) = out_yaml_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    let yaml_file = File::create(&out_yaml_path)?;
-    serde_yaml::to_writer(BufWriter::new(yaml_file), &merged)?;
-
-    let written_dat = if let Some(dat_path) = out_dat_path {
-        if let Some(parent) = dat_path.parent() {
+        if let Some(parent) = out_yaml_path.parent() {
             fs::create_dir_all(parent)?;
         }
 
-        let value = serde_yaml::to_value(&merged)?;
-        let dat: ItemInfoTable = serde_yaml::from_value(value)?;
-        let bytes = dat.to_bytes()?;
-        ItemInfoTable::from_bytes(&bytes)
-            .map_err(|err| anyhow::anyhow!("Generated item DAT failed verification: {err}"))?;
-        fs::write(&dat_path, bytes)?;
+        let yaml_file = File::create(&out_yaml_path)?;
+        serde_yaml::to_writer(BufWriter::new(yaml_file), &merged)?;
 
-        Some(dat_path.display().to_string())
-    } else {
-        None
-    };
-
-    let (japanese_out_yaml_path, japanese_out_dat_path) =
-        if let Some(japanese_out_yaml_path) = japanese_out_yaml_path {
-            let merged_japanese = ItemInfoTableYaml {
-                items: merged_japanese_items,
-            };
-            if let Some(parent) = japanese_out_yaml_path.parent() {
+        let written_dat = if let Some(dat_path) = out_dat_path {
+            if let Some(parent) = dat_path.parent() {
                 fs::create_dir_all(parent)?;
             }
-            let yaml_file = File::create(&japanese_out_yaml_path)?;
-            serde_yaml::to_writer(BufWriter::new(yaml_file), &merged_japanese)?;
 
-            let written_japanese_dat = if let Some(dat_path) = japanese_out_dat_path {
-                if let Some(parent) = dat_path.parent() {
-                    fs::create_dir_all(parent)?;
-                }
+            let value = serde_yaml::to_value(&merged)?;
+            let dat: ItemInfoTable = serde_yaml::from_value(value)?;
+            let bytes = dat.to_bytes()?;
+            ItemInfoTable::from_bytes(&bytes)
+                .map_err(|err| anyhow::anyhow!("Generated item DAT failed verification: {err}"))?;
+            fs::write(&dat_path, bytes)?;
 
-                let value = serde_yaml::to_value(&merged_japanese)?;
-                let dat: ItemInfoTable = serde_yaml::from_value(value)?;
-                let bytes = dat.to_bytes()?;
-                ItemInfoTable::from_bytes(&bytes).map_err(|err| {
-                    anyhow::anyhow!("Generated Japanese item DAT failed verification: {err}")
-                })?;
-                fs::write(&dat_path, bytes)?;
-
-                Some(dat_path.display().to_string())
-            } else {
-                None
-            };
-
-            (
-                Some(japanese_out_yaml_path.display().to_string()),
-                written_japanese_dat,
-            )
+            Some(dat_path.display().to_string())
         } else {
-            (None, None)
+            None
         };
 
+        (out_yaml_path.display().to_string(), written_dat)
+    } else {
+        (String::new(), None)
+    };
+
+    let (japanese_out_yaml_path, japanese_out_dat_path) = if save_japanese {
+        let Some(japanese_out_yaml_path) = japanese_out_yaml_path else {
+            return Err(anyhow::anyhow!(
+                "This item diff does not have a Japanese pair to save."
+            ));
+        };
+        let merged_japanese = ItemInfoTableYaml {
+            items: merged_japanese_items,
+        };
+        if let Some(parent) = japanese_out_yaml_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let yaml_file = File::create(&japanese_out_yaml_path)?;
+        serde_yaml::to_writer(BufWriter::new(yaml_file), &merged_japanese)?;
+
+        let written_japanese_dat = if let Some(dat_path) = japanese_out_dat_path {
+            if let Some(parent) = dat_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+
+            let value = serde_yaml::to_value(&merged_japanese)?;
+            let dat: ItemInfoTable = serde_yaml::from_value(value)?;
+            let bytes = dat.to_bytes()?;
+            ItemInfoTable::from_bytes(&bytes).map_err(|err| {
+                anyhow::anyhow!("Generated Japanese item DAT failed verification: {err}")
+            })?;
+            fs::write(&dat_path, bytes)?;
+
+            Some(dat_path.display().to_string())
+        } else {
+            None
+        };
+
+        (
+            Some(japanese_out_yaml_path.display().to_string()),
+            written_japanese_dat,
+        )
+    } else {
+        (None, None)
+    };
+
     Ok(ItemDiffSaveResult {
-        written_count: merged.items.len(),
+        written_count: merged_items.len(),
         kept_old_count,
         kept_new_count,
-        out_yaml_path: out_yaml_path.display().to_string(),
+        saved_english: save_english,
+        saved_japanese: save_japanese,
+        out_yaml_path: out_yaml_path_string,
         out_dat_path: written_dat,
         japanese_out_yaml_path,
         japanese_out_dat_path,

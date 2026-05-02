@@ -5,6 +5,7 @@ import { commands, DatDescriptorInfo } from "../bindings";
 import {
   EntityDiffChoice,
   ItemDiffRow,
+  ItemDiffSaveTarget,
   compareItemFiles,
   saveItemDiff,
 } from "../custom_bindings";
@@ -343,6 +344,8 @@ interface ItemDiffRetailSnapshot {
 }
 
 function isRetailChangedRow(row: ItemDiffUiRow, retailSnapshot?: ItemDiffRetailSnapshot | null) {
+  const retailId = retailSnapshot?.id ?? row.retail_id;
+  const retailName = retailSnapshot?.name ?? row.retail_en_name;
   const retailStackSize = retailSnapshot?.stack_size ?? row.retail_stack_size;
   const retailLevel = retailSnapshot?.level ?? row.retail_level;
   const retailItemType = retailSnapshot?.item_type ?? row.retail_item_type;
@@ -361,6 +364,8 @@ function isRetailChangedRow(row: ItemDiffUiRow, retailSnapshot?: ItemDiffRetailS
   const retailJpDescription = retailSnapshot?.jp_description ?? row.retail_jp_description ?? null;
 
   return (
+    row.old_id !== retailId ||
+    (row.old_en_name ?? null) !== (retailName ?? null) ||
     row.old_stack_size !== retailStackSize ||
     row.old_level !== retailLevel ||
     (row.old_item_type ?? null) !== (retailItemType ?? null) ||
@@ -1274,7 +1279,7 @@ function ItemDiffTool() {
     setChangedRowIds(buildRetailChangedRowIdSet(rows, retailSnapshotByRow()));
     setRowsVersion((version) => version + 1);
 
-    setLastNotice(`Unchecked "${flag}" on editable side for ${affectedRows} row(s). Review and Save merged.`);
+    setLastNotice(`Unchecked "${flag}" on editable side for ${affectedRows} row(s). Review and save.`);
   };
 
   const removeJobFromAllItems = async () => {
@@ -1323,10 +1328,10 @@ function ItemDiffTool() {
     setChangedRowIds(buildRetailChangedRowIdSet(rows, retailSnapshotByRow()));
     setRowsVersion((version) => version + 1);
 
-    setLastNotice(`Unchecked "${job}" on editable side for ${affectedRows} row(s). Review and Save merged.`);
+    setLastNotice(`Unchecked "${job}" on editable side for ${affectedRows} row(s). Review and save.`);
   };
 
-  const saveMerged = async () => {
+  const saveMerged = async (saveTarget: ItemDiffSaveTarget) => {
     if (rows.length === 0) {
       await showMessage("Compare files first so there is something to save.", { title: "Nothing To Save", kind: "warning" });
       return;
@@ -1351,8 +1356,9 @@ function ItemDiffTool() {
     const outDatPath: string | null = autoPaths.datPath;
     const normalizedRetailPath = normalizePathForCompare(newRetailPath());
     const writesToRetailFile =
-      normalizePathForCompare(outYamlPath) === normalizedRetailPath ||
-      (!!outDatPath && normalizePathForCompare(outDatPath) === normalizedRetailPath);
+      saveTarget !== "japanese" &&
+      (normalizePathForCompare(outYamlPath) === normalizedRetailPath ||
+        (!!outDatPath && normalizePathForCompare(outDatPath) === normalizedRetailPath));
     if (writesToRetailFile) {
       await showMessage("Refusing to save: output path resolves to the selected New Retail file.", { title: "Save Blocked", kind: "error" });
       return;
@@ -1363,25 +1369,34 @@ function ItemDiffTool() {
     setSaving(true);
     try {
       const result = unwrap(
-        await saveItemDiff(editedPath(), newRetailPath(), payloadRows, outYamlPath, outDatPath),
+        await saveItemDiff(editedPath(), newRetailPath(), payloadRows, outYamlPath, outDatPath, saveTarget),
       );
       const preferredEditedPath =
         fileExtension(editedPath()) === "dat" && result.out_dat_path
           ? result.out_dat_path
           : result.out_yaml_path;
 
-      setLastSavedYamlPath(result.out_yaml_path);
-      setLastSavedDatPath(result.out_dat_path ?? "");
-      setLastSavedJapaneseYamlPath(result.japanese_out_yaml_path ?? "");
-      setLastSavedJapaneseDatPath(result.japanese_out_dat_path ?? "");
-      if (preferredEditedPath) {
+      if (result.saved_english) {
+        setLastSavedYamlPath(result.out_yaml_path);
+        setLastSavedDatPath(result.out_dat_path ?? "");
+      }
+      if (result.saved_japanese) {
+        setLastSavedJapaneseYamlPath(result.japanese_out_yaml_path ?? "");
+        setLastSavedJapaneseDatPath(result.japanese_out_dat_path ?? "");
+      }
+      if (result.saved_english && preferredEditedPath) {
         setEditedPath(preferredEditedPath);
       }
+      const saveLabel = result.saved_english && result.saved_japanese
+        ? "EN + JP"
+        : result.saved_english
+          ? "EN"
+          : "JP";
       setLastNotice(
-        `Saved ${result.written_count} entries${result.japanese_out_dat_path || result.japanese_out_yaml_path ? " with JP pair" : ""}. Edited source now points to: ${preferredEditedPath}`,
+        `Saved ${result.written_count} entries to ${saveLabel}.${result.saved_english ? ` Edited source now points to: ${preferredEditedPath}` : ""}`,
       );
       await showMessage(
-        `Saved ${result.written_count} entries.\nYAML: ${result.out_yaml_path}${result.out_dat_path ? `\nDAT: ${result.out_dat_path}` : ""}${result.japanese_out_yaml_path ? `\nJP YAML: ${result.japanese_out_yaml_path}` : ""}${result.japanese_out_dat_path ? `\nJP DAT: ${result.japanese_out_dat_path}` : ""}`,
+        `Saved ${result.written_count} entries to ${saveLabel}.${result.saved_english ? `\nEN YAML: ${result.out_yaml_path}${result.out_dat_path ? `\nEN DAT: ${result.out_dat_path}` : ""}` : ""}${result.saved_japanese ? `${result.japanese_out_yaml_path ? `\nJP YAML: ${result.japanese_out_yaml_path}` : ""}${result.japanese_out_dat_path ? `\nJP DAT: ${result.japanese_out_dat_path}` : ""}` : ""}`,
         { title: "Saved", kind: "info" },
       );
     } catch (err) {
@@ -1482,7 +1497,7 @@ function ItemDiffTool() {
           </div>
 
           <div class="text-[11px] text-slate-400">
-            Retail is read-only input. Save merged only writes to your edited-side output.
+            Retail is read-only input. Saves only write to your edited-side output.
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
@@ -1494,12 +1509,43 @@ function ItemDiffTool() {
               {isComparing() ? "Reloading..." : "Reload"}
             </button>
 
+            <Show when={rows.length > 0}>
+              <button
+                class={compactButtonClass(showChangedOnly())}
+                onClick={() => setShowChangedOnly(!showChangedOnly())}
+              >
+                {showChangedOnly() ? "Showing changed rows" : "Showing all rows"}
+              </button>
+            </Show>
+
             <button
               class={compactButtonClass()}
               disabled={isSaving() || rows.length === 0}
-              onClick={saveMerged}
+              onClick={() => {
+                void saveMerged("english");
+              }}
             >
-              {isSaving() ? "Saving..." : "Save merged"}
+              {isSaving() ? "Saving..." : "Save EN"}
+            </button>
+
+            <button
+              class={compactButtonClass()}
+              disabled={isSaving() || rows.length === 0 || (!oldJapanesePath() && !newJapanesePath())}
+              onClick={() => {
+                void saveMerged("japanese");
+              }}
+            >
+              {isSaving() ? "Saving..." : "Save JP"}
+            </button>
+
+            <button
+              class={compactButtonClass()}
+              disabled={isSaving() || rows.length === 0}
+              onClick={() => {
+                void saveMerged("both");
+              }}
+            >
+              {isSaving() ? "Saving..." : "Save EN + JP"}
             </button>
 
             <Show when={rows.length > 0}>
@@ -1533,7 +1579,7 @@ function ItemDiffTool() {
           <div class="rounded-md border border-rose-700/60 bg-rose-950/15 px-3 py-2">
             <div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-rose-200">Danger Zone</div>
             <div class="text-xs text-rose-300">
-              Bulk removals only affect the editable side. Nothing is written until you click Save merged.
+              Bulk removals only affect the editable side. Nothing is written until you save.
             </div>
             <div class="mt-2 flex flex-wrap items-end gap-2">
               <div class="flex items-center gap-2">

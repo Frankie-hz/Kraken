@@ -1788,8 +1788,19 @@ pub async fn save_item_diff(
     rows: Vec<ItemDiffRow>,
     out_yaml_path: PathBuf,
     out_dat_path: Option<PathBuf>,
+    save_target: Option<String>,
     state: AppState<'_>,
 ) -> Result<ItemDiffSaveResult, AppError> {
+    let target = save_target
+        .unwrap_or_else(|| "both".to_string())
+        .to_ascii_lowercase();
+    let save_english = target == "both" || target == "english";
+    let save_japanese = target == "both" || target == "japanese";
+
+    if !save_english && !save_japanese {
+        return Err(anyhow!("Unknown item diff save target: {target}.").into());
+    }
+
     let (dat_context, project_root) = {
         let state = state.read();
         (state.dat_context.clone(), state.project_path.clone())
@@ -1807,6 +1818,8 @@ pub async fn save_item_diff(
         japanese_paths.old_japanese_path,
         japanese_paths.new_japanese_path,
         rows,
+        save_english,
+        save_japanese,
         out_yaml_path,
         out_dat_path,
         japanese_paths.japanese_output_yaml_path,

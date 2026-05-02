@@ -240,9 +240,9 @@ pub struct SpellDiffRow {
     pub old_mp_cost: Option<u32>,
     pub old_cast_time: Option<u32>,
     pub old_recast_time: Option<u32>,
-    pub old_range: Option<i32>,
-    pub old_radius: Option<i32>,
-    pub old_aoe_type: Option<String>,
+    pub old_range: Option<String>,
+    pub old_aoe_range: Option<String>,
+    pub old_area_shape: Option<String>,
     pub old_valid_target_type: Option<String>,
     pub old_level_required: Option<HashMap<String, u32>>,
     pub new_index: Option<u32>,
@@ -254,9 +254,9 @@ pub struct SpellDiffRow {
     pub new_mp_cost: Option<u32>,
     pub new_cast_time: Option<u32>,
     pub new_recast_time: Option<u32>,
-    pub new_range: Option<i32>,
-    pub new_radius: Option<i32>,
-    pub new_aoe_type: Option<String>,
+    pub new_range: Option<String>,
+    pub new_aoe_range: Option<String>,
+    pub new_area_shape: Option<String>,
     pub new_valid_target_type: Option<String>,
     pub new_level_required: Option<HashMap<String, u32>>,
     pub target_index: Option<u32>,
@@ -281,9 +281,9 @@ pub struct AbilityDiffRow {
     pub old_description_jp: Option<String>,
     pub old_valid_targets: Option<Vec<String>>,
     pub old_charges_required: Option<u32>,
-    pub old_range: Option<i32>,
-    pub old_radius: Option<i32>,
-    pub old_aoe_type: Option<String>,
+    pub old_range: Option<String>,
+    pub old_aoe_range: Option<String>,
+    pub old_area_shape: Option<String>,
     pub old_valid_target_type: Option<String>,
     pub new_id: Option<u32>,
     pub new_name: Option<String>,
@@ -292,9 +292,9 @@ pub struct AbilityDiffRow {
     pub new_description_jp: Option<String>,
     pub new_valid_targets: Option<Vec<String>>,
     pub new_charges_required: Option<u32>,
-    pub new_range: Option<i32>,
-    pub new_radius: Option<i32>,
-    pub new_aoe_type: Option<String>,
+    pub new_range: Option<String>,
+    pub new_aoe_range: Option<String>,
+    pub new_area_shape: Option<String>,
     pub new_valid_target_type: Option<String>,
     pub target_id: Option<u32>,
     pub choice: EntityDiffChoice,
@@ -622,10 +622,7 @@ pub fn save_zone_editor_rows(
     Ok(merged.names.len())
 }
 
-fn item_diff_values(
-    english_item: Option<&Value>,
-    japanese_item: Option<&Value>,
-) -> ItemDiffValues {
+fn item_diff_values(english_item: Option<&Value>, japanese_item: Option<&Value>) -> ItemDiffValues {
     ItemDiffValues {
         id: english_item
             .and_then(get_item_id)
@@ -777,8 +774,14 @@ pub fn compare_item_files(
 ) -> Result<ItemDiffResult> {
     let old_data = load_item_table(&old_path)?;
     let new_data = load_item_table(&new_path)?;
-    let old_japanese_data = old_japanese_path.as_ref().map(load_item_table).transpose()?;
-    let new_japanese_data = new_japanese_path.as_ref().map(load_item_table).transpose()?;
+    let old_japanese_data = old_japanese_path
+        .as_ref()
+        .map(load_item_table)
+        .transpose()?;
+    let new_japanese_data = new_japanese_path
+        .as_ref()
+        .map(load_item_table)
+        .transpose()?;
 
     let old_entries = align_entries_from_items(&old_data.items);
     let new_entries = align_entries_from_items(&new_data.items);
@@ -948,8 +951,14 @@ pub fn save_item_diff(
 ) -> Result<ItemDiffSaveResult> {
     let old_data = load_item_table(&old_path)?;
     let new_data = load_item_table(&new_path)?;
-    let old_japanese_data = old_japanese_path.as_ref().map(load_item_table).transpose()?;
-    let new_japanese_data = new_japanese_path.as_ref().map(load_item_table).transpose()?;
+    let old_japanese_data = old_japanese_path
+        .as_ref()
+        .map(load_item_table)
+        .transpose()?;
+    let new_japanese_data = new_japanese_path
+        .as_ref()
+        .map(load_item_table)
+        .transpose()?;
 
     let old_entries = align_entries_from_items(&old_data.items);
     let new_entries = align_entries_from_items(&new_data.items);
@@ -1368,8 +1377,8 @@ pub fn compare_spell_files_with_text_paths(
                     let old_cast_time = get_spell_cast_time(old_spell);
                     let old_recast_time = get_spell_recast_time(old_spell);
                     let old_range = get_spell_range(old_spell);
-                    let old_radius = get_spell_radius(old_spell);
-                    let old_aoe_type = get_spell_aoe_type(old_spell);
+                    let old_aoe_range = get_spell_aoe_range(old_spell);
+                    let old_area_shape = get_spell_area_shape(old_spell);
                     let old_valid_target_type = get_spell_valid_target_type(old_spell);
                     let old_level_required = get_spell_level_required(old_spell);
 
@@ -1385,8 +1394,8 @@ pub fn compare_spell_files_with_text_paths(
                     let new_cast_time = get_spell_cast_time(new_spell);
                     let new_recast_time = get_spell_recast_time(new_spell);
                     let new_range = get_spell_range(new_spell);
-                    let new_radius = get_spell_radius(new_spell);
-                    let new_aoe_type = get_spell_aoe_type(new_spell);
+                    let new_aoe_range = get_spell_aoe_range(new_spell);
+                    let new_area_shape = get_spell_area_shape(new_spell);
                     let new_valid_target_type = get_spell_valid_target_type(new_spell);
                     let new_level_required = get_spell_level_required(new_spell);
 
@@ -1400,8 +1409,8 @@ pub fn compare_spell_files_with_text_paths(
                         || old_cast_time != new_cast_time
                         || old_recast_time != new_recast_time
                         || old_range != new_range
-                        || old_radius != new_radius
-                        || old_aoe_type != new_aoe_type
+                        || old_aoe_range != new_aoe_range
+                        || old_area_shape != new_area_shape
                         || old_valid_target_type != new_valid_target_type
                         || old_level_required != new_level_required;
                     if is_changed {
@@ -1420,8 +1429,8 @@ pub fn compare_spell_files_with_text_paths(
                         old_cast_time,
                         old_recast_time,
                         old_range,
-                        old_radius,
-                        old_aoe_type,
+                        old_aoe_range,
+                        old_area_shape,
                         old_valid_target_type,
                         old_level_required,
                         new_index,
@@ -1434,8 +1443,8 @@ pub fn compare_spell_files_with_text_paths(
                         new_cast_time,
                         new_recast_time,
                         new_range,
-                        new_radius,
-                        new_aoe_type,
+                        new_aoe_range,
+                        new_area_shape,
                         new_valid_target_type,
                         new_level_required,
                         target_index: new_index.or(old_index),
@@ -1465,8 +1474,8 @@ pub fn compare_spell_files_with_text_paths(
                         old_cast_time: get_spell_cast_time(old_spell),
                         old_recast_time: get_spell_recast_time(old_spell),
                         old_range: get_spell_range(old_spell),
-                        old_radius: get_spell_radius(old_spell),
-                        old_aoe_type: get_spell_aoe_type(old_spell),
+                        old_aoe_range: get_spell_aoe_range(old_spell),
+                        old_area_shape: get_spell_area_shape(old_spell),
                         old_valid_target_type: get_spell_valid_target_type(old_spell),
                         old_level_required: get_spell_level_required(old_spell),
                         new_index: None,
@@ -1479,8 +1488,8 @@ pub fn compare_spell_files_with_text_paths(
                         new_cast_time: None,
                         new_recast_time: None,
                         new_range: None,
-                        new_radius: None,
-                        new_aoe_type: None,
+                        new_aoe_range: None,
+                        new_area_shape: None,
                         new_valid_target_type: None,
                         new_level_required: None,
                         target_index: old_index,
@@ -1504,8 +1513,8 @@ pub fn compare_spell_files_with_text_paths(
                         old_cast_time: None,
                         old_recast_time: None,
                         old_range: None,
-                        old_radius: None,
-                        old_aoe_type: None,
+                        old_aoe_range: None,
+                        old_area_shape: None,
                         old_valid_target_type: None,
                         old_level_required: None,
                         new_index,
@@ -1524,8 +1533,8 @@ pub fn compare_spell_files_with_text_paths(
                         new_cast_time: get_spell_cast_time(new_spell),
                         new_recast_time: get_spell_recast_time(new_spell),
                         new_range: get_spell_range(new_spell),
-                        new_radius: get_spell_radius(new_spell),
-                        new_aoe_type: get_spell_aoe_type(new_spell),
+                        new_aoe_range: get_spell_aoe_range(new_spell),
+                        new_area_shape: get_spell_area_shape(new_spell),
                         new_valid_target_type: get_spell_valid_target_type(new_spell),
                         new_level_required: get_spell_level_required(new_spell),
                         target_index: new_index,
@@ -1701,27 +1710,27 @@ pub fn save_spell_diff_with_text_paths(
         }
 
         let chosen_range = row.and_then(|row| match effective_choice {
-            EntityDiffChoice::Old => row.old_range,
-            EntityDiffChoice::New => row.new_range,
+            EntityDiffChoice::Old => row.old_range.clone(),
+            EntityDiffChoice::New => row.new_range.clone(),
         });
         if let Some(range) = chosen_range {
             set_spell_range(&mut selected_spell, range);
         }
 
-        let chosen_radius = row.and_then(|row| match effective_choice {
-            EntityDiffChoice::Old => row.old_radius,
-            EntityDiffChoice::New => row.new_radius,
+        let chosen_aoe_range = row.and_then(|row| match effective_choice {
+            EntityDiffChoice::Old => row.old_aoe_range.clone(),
+            EntityDiffChoice::New => row.new_aoe_range.clone(),
         });
-        if let Some(radius) = chosen_radius {
-            set_spell_radius(&mut selected_spell, radius);
+        if let Some(aoe_range) = chosen_aoe_range {
+            set_spell_aoe_range(&mut selected_spell, aoe_range);
         }
 
-        let chosen_aoe_type = row.and_then(|row| match effective_choice {
-            EntityDiffChoice::Old => row.old_aoe_type.clone(),
-            EntityDiffChoice::New => row.new_aoe_type.clone(),
+        let chosen_area_shape = row.and_then(|row| match effective_choice {
+            EntityDiffChoice::Old => row.old_area_shape.clone(),
+            EntityDiffChoice::New => row.new_area_shape.clone(),
         });
-        if let Some(aoe_type) = chosen_aoe_type {
-            set_spell_aoe_type(&mut selected_spell, aoe_type);
+        if let Some(area_shape) = chosen_area_shape {
+            set_spell_area_shape(&mut selected_spell, area_shape);
         }
 
         let chosen_valid_target_type = row.and_then(|row| match effective_choice {
@@ -1826,8 +1835,8 @@ pub fn compare_ability_files_with_text_paths(
                 let old_valid_targets = get_ability_valid_targets(old_ability);
                 let old_charges_required = get_ability_charges_required(old_ability);
                 let old_range = get_ability_range(old_ability);
-                let old_radius = get_ability_radius(old_ability);
-                let old_aoe_type = get_ability_aoe_type(old_ability);
+                let old_aoe_range = get_ability_aoe_range(old_ability);
+                let old_area_shape = get_ability_area_shape(old_ability);
                 let old_valid_target_type = get_ability_valid_target_type(old_ability);
 
                 let new_id = get_ability_id(new_ability);
@@ -1840,8 +1849,8 @@ pub fn compare_ability_files_with_text_paths(
                 let new_valid_targets = get_ability_valid_targets(new_ability);
                 let new_charges_required = get_ability_charges_required(new_ability);
                 let new_range = get_ability_range(new_ability);
-                let new_radius = get_ability_radius(new_ability);
-                let new_aoe_type = get_ability_aoe_type(new_ability);
+                let new_aoe_range = get_ability_aoe_range(new_ability);
+                let new_area_shape = get_ability_area_shape(new_ability);
                 let new_valid_target_type = get_ability_valid_target_type(new_ability);
 
                 let is_changed = old_id != new_id
@@ -1852,8 +1861,8 @@ pub fn compare_ability_files_with_text_paths(
                     || old_valid_targets != new_valid_targets
                     || old_charges_required != new_charges_required
                     || old_range != new_range
-                    || old_radius != new_radius
-                    || old_aoe_type != new_aoe_type
+                    || old_aoe_range != new_aoe_range
+                    || old_area_shape != new_area_shape
                     || old_valid_target_type != new_valid_target_type;
                 if is_changed {
                     changed_count += 1;
@@ -1869,8 +1878,8 @@ pub fn compare_ability_files_with_text_paths(
                     old_valid_targets,
                     old_charges_required,
                     old_range,
-                    old_radius,
-                    old_aoe_type,
+                    old_aoe_range,
+                    old_area_shape,
                     old_valid_target_type,
                     new_id,
                     new_name,
@@ -1880,8 +1889,8 @@ pub fn compare_ability_files_with_text_paths(
                     new_valid_targets,
                     new_charges_required,
                     new_range,
-                    new_radius,
-                    new_aoe_type,
+                    new_aoe_range,
+                    new_area_shape,
                     new_valid_target_type,
                     target_id: new_id.or(old_id),
                     choice: EntityDiffChoice::New,
@@ -1908,8 +1917,8 @@ pub fn compare_ability_files_with_text_paths(
                     old_valid_targets: get_ability_valid_targets(old_ability),
                     old_charges_required: get_ability_charges_required(old_ability),
                     old_range: get_ability_range(old_ability),
-                    old_radius: get_ability_radius(old_ability),
-                    old_aoe_type: get_ability_aoe_type(old_ability),
+                    old_aoe_range: get_ability_aoe_range(old_ability),
+                    old_area_shape: get_ability_area_shape(old_ability),
                     old_valid_target_type: get_ability_valid_target_type(old_ability),
                     new_id: None,
                     new_name: None,
@@ -1919,8 +1928,8 @@ pub fn compare_ability_files_with_text_paths(
                     new_valid_targets: None,
                     new_charges_required: None,
                     new_range: None,
-                    new_radius: None,
-                    new_aoe_type: None,
+                    new_aoe_range: None,
+                    new_area_shape: None,
                     new_valid_target_type: None,
                     target_id: old_id,
                     choice: EntityDiffChoice::Old,
@@ -1941,8 +1950,8 @@ pub fn compare_ability_files_with_text_paths(
                     old_valid_targets: None,
                     old_charges_required: None,
                     old_range: None,
-                    old_radius: None,
-                    old_aoe_type: None,
+                    old_aoe_range: None,
+                    old_area_shape: None,
                     old_valid_target_type: None,
                     new_id,
                     new_name: lookup_ability_text(&ability_text.ability_names_en, new_ability),
@@ -1958,8 +1967,8 @@ pub fn compare_ability_files_with_text_paths(
                     new_valid_targets: get_ability_valid_targets(new_ability),
                     new_charges_required: get_ability_charges_required(new_ability),
                     new_range: get_ability_range(new_ability),
-                    new_radius: get_ability_radius(new_ability),
-                    new_aoe_type: get_ability_aoe_type(new_ability),
+                    new_aoe_range: get_ability_aoe_range(new_ability),
+                    new_area_shape: get_ability_area_shape(new_ability),
                     new_valid_target_type: get_ability_valid_target_type(new_ability),
                     target_id: new_id,
                     choice: EntityDiffChoice::New,
@@ -2115,24 +2124,24 @@ pub fn save_ability_diff_with_text_paths(
         }
 
         if let Some(range) = row.and_then(|row| match effective_choice {
-            EntityDiffChoice::Old => row.old_range,
-            EntityDiffChoice::New => row.new_range,
+            EntityDiffChoice::Old => row.old_range.clone(),
+            EntityDiffChoice::New => row.new_range.clone(),
         }) {
             set_ability_range(&mut selected_ability, range);
         }
 
-        if let Some(radius) = row.and_then(|row| match effective_choice {
-            EntityDiffChoice::Old => row.old_radius,
-            EntityDiffChoice::New => row.new_radius,
+        if let Some(aoe_range) = row.and_then(|row| match effective_choice {
+            EntityDiffChoice::Old => row.old_aoe_range.clone(),
+            EntityDiffChoice::New => row.new_aoe_range.clone(),
         }) {
-            set_ability_radius(&mut selected_ability, radius);
+            set_ability_aoe_range(&mut selected_ability, aoe_range);
         }
 
-        if let Some(aoe_type) = row.and_then(|row| match effective_choice {
-            EntityDiffChoice::Old => row.old_aoe_type.clone(),
-            EntityDiffChoice::New => row.new_aoe_type.clone(),
+        if let Some(area_shape) = row.and_then(|row| match effective_choice {
+            EntityDiffChoice::Old => row.old_area_shape.clone(),
+            EntityDiffChoice::New => row.new_area_shape.clone(),
         }) {
-            set_ability_aoe_type(&mut selected_ability, aoe_type);
+            set_ability_area_shape(&mut selected_ability, area_shape);
         }
 
         if let Some(valid_target_type) = row.and_then(|row| match effective_choice {
@@ -3128,13 +3137,6 @@ fn get_spell_u32(item: &Value, key: &str) -> Option<u32> {
     u32::try_from(number).ok()
 }
 
-fn get_spell_i32(item: &Value, key: &str) -> Option<i32> {
-    let mapping = item.as_mapping()?;
-    let value = mapping.get(Value::String(key.to_string()))?;
-    let number = value.as_i64()?;
-    i32::try_from(number).ok()
-}
-
 fn get_spell_string(item: &Value, key: &str) -> Option<String> {
     let mapping = item.as_mapping()?;
     let value = mapping.get(Value::String(key.to_string()))?;
@@ -3164,16 +3166,16 @@ fn get_spell_mp_cost(item: &Value) -> Option<u32> {
     get_spell_u32(item, "mp_cost")
 }
 
-fn get_spell_range(item: &Value) -> Option<i32> {
-    get_spell_i32(item, "range")
+fn get_spell_range(item: &Value) -> Option<String> {
+    get_spell_string(item, "range")
 }
 
-fn get_spell_radius(item: &Value) -> Option<i32> {
-    get_spell_i32(item, "radius")
+fn get_spell_aoe_range(item: &Value) -> Option<String> {
+    get_spell_string(item, "aoe_range")
 }
 
-fn get_spell_aoe_type(item: &Value) -> Option<String> {
-    get_spell_string(item, "aoe_type")
+fn get_spell_area_shape(item: &Value) -> Option<String> {
+    get_spell_string(item, "area_shape")
 }
 
 fn get_spell_valid_target_type(item: &Value) -> Option<String> {
@@ -3206,14 +3208,6 @@ fn set_spell_u32(item: &mut Value, key: &str, value: u32) -> bool {
     true
 }
 
-fn set_spell_i32(item: &mut Value, key: &str, value: i32) -> bool {
-    let Some(mapping) = item.as_mapping_mut() else {
-        return false;
-    };
-    mapping.insert(Value::String(key.to_string()), Value::Number(value.into()));
-    true
-}
-
 fn set_spell_string(item: &mut Value, key: &str, value: String) -> bool {
     let Some(mapping) = item.as_mapping_mut() else {
         return false;
@@ -3234,16 +3228,16 @@ fn set_spell_recast_time(item: &mut Value, recast_time: u32) -> bool {
     set_spell_u32(item, "recast_time", recast_time)
 }
 
-fn set_spell_range(item: &mut Value, range: i32) -> bool {
-    set_spell_i32(item, "range", range)
+fn set_spell_range(item: &mut Value, range: String) -> bool {
+    set_spell_string(item, "range", range)
 }
 
-fn set_spell_radius(item: &mut Value, radius: i32) -> bool {
-    set_spell_i32(item, "radius", radius)
+fn set_spell_aoe_range(item: &mut Value, aoe_range: String) -> bool {
+    set_spell_string(item, "aoe_range", aoe_range)
 }
 
-fn set_spell_aoe_type(item: &mut Value, aoe_type: String) -> bool {
-    set_spell_string(item, "aoe_type", aoe_type)
+fn set_spell_area_shape(item: &mut Value, area_shape: String) -> bool {
+    set_spell_string(item, "area_shape", area_shape)
 }
 
 fn set_spell_valid_target_type(item: &mut Value, valid_target_type: String) -> bool {
@@ -3266,28 +3260,28 @@ fn set_ability_charges_required(item: &mut Value, charges_required: u32) -> bool
     set_spell_u32(item, "charges_required", charges_required)
 }
 
-fn get_ability_range(item: &Value) -> Option<i32> {
-    get_spell_i32(item, "range")
+fn get_ability_range(item: &Value) -> Option<String> {
+    get_spell_string(item, "range")
 }
 
-fn set_ability_range(item: &mut Value, range: i32) -> bool {
-    set_spell_i32(item, "range", range)
+fn set_ability_range(item: &mut Value, range: String) -> bool {
+    set_spell_string(item, "range", range)
 }
 
-fn get_ability_radius(item: &Value) -> Option<i32> {
-    get_spell_i32(item, "radius")
+fn get_ability_aoe_range(item: &Value) -> Option<String> {
+    get_spell_string(item, "aoe_range")
 }
 
-fn set_ability_radius(item: &mut Value, radius: i32) -> bool {
-    set_spell_i32(item, "radius", radius)
+fn set_ability_aoe_range(item: &mut Value, aoe_range: String) -> bool {
+    set_spell_string(item, "aoe_range", aoe_range)
 }
 
-fn get_ability_aoe_type(item: &Value) -> Option<String> {
-    get_spell_string(item, "aoe_type")
+fn get_ability_area_shape(item: &Value) -> Option<String> {
+    get_spell_string(item, "area_shape")
 }
 
-fn set_ability_aoe_type(item: &mut Value, aoe_type: String) -> bool {
-    set_spell_string(item, "aoe_type", aoe_type)
+fn set_ability_area_shape(item: &mut Value, area_shape: String) -> bool {
+    set_spell_string(item, "area_shape", area_shape)
 }
 
 fn get_ability_valid_target_type(item: &Value) -> Option<String> {

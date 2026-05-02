@@ -167,7 +167,8 @@ const VALID_TARGET_LABELS: Record<string, string> = {
   PartyMember: "Party",
 };
 
-const AOE_TYPE_OPTIONS = ["None", "TargetAoe", "SelfConal", "SelfAoe"];
+const SPELL_DISTANCE_OPTIONS = ["None", "D1", "D3", "D4", "D5", "D6", "D7", "D8", "D10", "D12", "D14", "D16", "D20", "D25", "D30", "SelfTarget"];
+const AREA_SHAPE_OPTIONS = ["Single", "Sphere", "Cone", "CasterSphere"];
 const VALID_TARGET_TYPE_OPTIONS = [
   "All",
   "SelfTarget",
@@ -243,8 +244,8 @@ function rowMatchesFilter(row: SpellDiffRow, filterText: string) {
     row.new_cast_time ?? row.old_cast_time,
     row.new_recast_time ?? row.old_recast_time,
     row.new_range ?? row.old_range,
-    row.new_radius ?? row.old_radius,
-    row.new_aoe_type ?? row.old_aoe_type,
+    row.new_aoe_range ?? row.old_aoe_range,
+    row.new_area_shape ?? row.old_area_shape,
     row.new_valid_target_type ?? row.old_valid_target_type,
     descriptionEn,
     descriptionJp,
@@ -307,7 +308,7 @@ const DEFAULT_ROW_METRICS = {
   rowHeight: MIN_VIRTUAL_ROW_HEIGHT_PX,
 };
 
-type SpellEditableValueKey = "new_mp_cost" | "new_cast_time" | "new_recast_time" | "new_range" | "new_radius";
+type SpellEditableValueKey = "new_mp_cost" | "new_cast_time" | "new_recast_time";
 
 interface SpellEditorCachedState {
   spell_path: string;
@@ -582,8 +583,8 @@ function SpellDiffTool() {
       (draftRow.old_cast_time ?? null) !== (draftRow.new_cast_time ?? null) ||
       (draftRow.old_recast_time ?? null) !== (draftRow.new_recast_time ?? null) ||
       (draftRow.old_range ?? null) !== (draftRow.new_range ?? null) ||
-      (draftRow.old_radius ?? null) !== (draftRow.new_radius ?? null) ||
-      (draftRow.old_aoe_type ?? null) !== (draftRow.new_aoe_type ?? null) ||
+      (draftRow.old_aoe_range ?? null) !== (draftRow.new_aoe_range ?? null) ||
+      (draftRow.old_area_shape ?? null) !== (draftRow.new_area_shape ?? null) ||
       (draftRow.old_valid_target_type ?? null) !== (draftRow.new_valid_target_type ?? null) ||
       !spellLevelsEqual(draftRow.old_level_required, draftRow.new_level_required)
     );
@@ -725,8 +726,8 @@ function SpellDiffTool() {
           new_cast_time: row.new_cast_time ?? row.old_cast_time,
           new_recast_time: row.new_recast_time ?? row.old_recast_time,
           new_range: row.new_range ?? row.old_range,
-          new_radius: row.new_radius ?? row.old_radius,
-          new_aoe_type: row.new_aoe_type ?? row.old_aoe_type,
+          new_aoe_range: row.new_aoe_range ?? row.old_aoe_range,
+          new_area_shape: row.new_area_shape ?? row.old_area_shape,
           new_valid_target_type: row.new_valid_target_type ?? row.old_valid_target_type,
           new_level_required: row.new_level_required ?? row.old_level_required ?? {},
         }));
@@ -926,7 +927,7 @@ function SpellDiffTool() {
     }
   };
 
-  const parseEditableValueDraft = (key: SpellEditableValueKey, value: string): number | null => {
+  const parseEditableValueDraft = (_key: SpellEditableValueKey, value: string): number | null => {
     const trimmed = value.trim();
     if (!trimmed) {
       return null;
@@ -937,10 +938,7 @@ function SpellDiffTool() {
       return null;
     }
 
-    if ((key === "new_range" || key === "new_radius") && (parsed < -128 || parsed > 127)) {
-      return null;
-    }
-    if (key !== "new_range" && key !== "new_radius" && parsed < 0) {
+    if (parsed < 0) {
       return null;
     }
 
@@ -1021,7 +1019,15 @@ function SpellDiffTool() {
 
   const setRowNewString = (
     rowId: number,
-    key: "new_name" | "new_name_jp" | "new_description_en" | "new_description_jp" | "new_aoe_type" | "new_valid_target_type",
+    key:
+      | "new_name"
+      | "new_name_jp"
+      | "new_description_en"
+      | "new_description_jp"
+      | "new_range"
+      | "new_aoe_range"
+      | "new_area_shape"
+      | "new_valid_target_type",
     value: string,
   ) => {
     const rowIndex = rowIndexById().get(rowId);
@@ -1137,8 +1143,8 @@ function SpellDiffTool() {
       new_cast_time: row.old_cast_time,
       new_recast_time: row.old_recast_time,
       new_range: row.old_range,
-      new_radius: row.old_radius,
-      new_aoe_type: row.old_aoe_type,
+      new_aoe_range: row.old_aoe_range,
+      new_area_shape: row.old_area_shape,
       new_valid_target_type: row.old_valid_target_type,
       new_level_required: row.old_level_required,
     }));
@@ -1426,8 +1432,8 @@ function SpellDiffTool() {
                           (displayRow.old_cast_time ?? null) !== (displayRow.new_cast_time ?? null) ||
                           (displayRow.old_recast_time ?? null) !== (displayRow.new_recast_time ?? null) ||
                           (displayRow.old_range ?? null) !== (displayRow.new_range ?? null) ||
-                          (displayRow.old_radius ?? null) !== (displayRow.new_radius ?? null) ||
-                          (displayRow.old_aoe_type ?? null) !== (displayRow.new_aoe_type ?? null) ||
+                          (displayRow.old_aoe_range ?? null) !== (displayRow.new_aoe_range ?? null) ||
+                          (displayRow.old_area_shape ?? null) !== (displayRow.new_area_shape ?? null) ||
                           (displayRow.old_valid_target_type ?? null) !== (displayRow.new_valid_target_type ?? null);
                         const validTargetsChanged = !stringListsEqual(row.old_valid_targets, row.new_valid_targets);
                         const descriptionEnChanged = (displayRow.old_description_en ?? null) !== (displayRow.new_description_en ?? null);
@@ -1528,50 +1534,44 @@ function SpellDiffTool() {
                               </label>
                               <label class={COMPACT_VALUE_FIELD_CLASS}>
                                 <span>Range</span>
-                                <input
-                                  class={COMPACT_VALUE_INPUT_CLASS}
-                                  type="number"
+                                <select
+                                  class={COMPACT_VALUE_SELECT_CLASS}
                                   name={`spell-range-${row.row}`}
                                   autocomplete="off"
-                                  min={-128}
-                                  max={127}
-                                  step={1}
-                                  ref={(el) => {
-                                    el.value = `${editableValueDraftValue(row, "new_range")}`;
-                                  }}
-                                  onInput={(e) => setEditableValueDraft(row.row, "new_range", e.currentTarget.value)}
-                                  onBlur={() => commitEditableValueDraft(row.row, "new_range")}
-                                />
+                                  value={row.new_range ?? ""}
+                                  onChange={(e) => setRowNewString(row.row, "new_range", e.currentTarget.value)}
+                                >
+                                  <For each={SPELL_DISTANCE_OPTIONS}>
+                                    {(option) => <option value={option}>{option}</option>}
+                                  </For>
+                                </select>
                               </label>
                             </div>
                             <div class="flex min-w-0 flex-col gap-1">
                               <label class={COMPACT_VALUE_FIELD_CLASS}>
-                                <span>Radius</span>
-                                <input
-                                  class={COMPACT_VALUE_INPUT_CLASS}
-                                  type="number"
-                                  name={`spell-radius-${row.row}`}
-                                  autocomplete="off"
-                                  min={-128}
-                                  max={127}
-                                  step={1}
-                                  ref={(el) => {
-                                    el.value = `${editableValueDraftValue(row, "new_radius")}`;
-                                  }}
-                                  onInput={(e) => setEditableValueDraft(row.row, "new_radius", e.currentTarget.value)}
-                                  onBlur={() => commitEditableValueDraft(row.row, "new_radius")}
-                                />
-                              </label>
-                              <label class={COMPACT_VALUE_FIELD_CLASS}>
-                                <span>AoE</span>
+                                <span>AoE Rng</span>
                                 <select
                                   class={COMPACT_VALUE_SELECT_CLASS}
-                                  name={`spell-aoe-type-${row.row}`}
+                                  name={`spell-aoe-range-${row.row}`}
                                   autocomplete="off"
-                                  value={row.new_aoe_type ?? ""}
-                                  onChange={(e) => setRowNewString(row.row, "new_aoe_type", e.currentTarget.value)}
+                                  value={row.new_aoe_range ?? ""}
+                                  onChange={(e) => setRowNewString(row.row, "new_aoe_range", e.currentTarget.value)}
                                 >
-                                  <For each={AOE_TYPE_OPTIONS}>
+                                  <For each={SPELL_DISTANCE_OPTIONS}>
+                                    {(option) => <option value={option}>{option}</option>}
+                                  </For>
+                                </select>
+                              </label>
+                              <label class={COMPACT_VALUE_FIELD_CLASS}>
+                                <span>Shape</span>
+                                <select
+                                  class={COMPACT_VALUE_SELECT_CLASS}
+                                  name={`spell-area-shape-${row.row}`}
+                                  autocomplete="off"
+                                  value={row.new_area_shape ?? ""}
+                                  onChange={(e) => setRowNewString(row.row, "new_area_shape", e.currentTarget.value)}
+                                >
+                                  <For each={AREA_SHAPE_OPTIONS}>
                                     {(option) => <option value={option}>{option}</option>}
                                   </For>
                                 </select>

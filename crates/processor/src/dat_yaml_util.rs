@@ -107,6 +107,7 @@ define_dat_files! {
         // String tables
         AbilityNames => "ability_names",
         AbilityDescriptions => "ability_descriptions",
+        AutoTranslate => "auto_translate",
         AreaNames => "area_names",
         AreaNamesShort => "area_names_short",
         AreaNamesAlt => "area_names_alt",
@@ -169,6 +170,7 @@ define_dat_files! {
             VouchersAndSlips => "vouchers_and_slips",
             Monipulator => "monipulator",
             Instincts => "instincts",
+            Furniture => "furniture",
         },
 
         // Global dialog

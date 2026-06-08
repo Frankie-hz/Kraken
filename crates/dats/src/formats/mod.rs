@@ -1,8 +1,10 @@
+pub mod auto_translate;
 pub mod dialog;
 pub mod dmsg_list;
 pub mod dmsg_table;
 pub mod entity_names;
 pub mod events;
+pub mod furniture_data;
 pub mod item_info;
 pub mod menu_table;
 pub mod merit_category_table;

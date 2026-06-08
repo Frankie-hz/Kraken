@@ -207,10 +207,39 @@ pub enum MagicType {
     BardSong = 5,
     BlueMagic = 6,
     Geomancy = 7,
+    TrustMagic = 8,
 
     #[num_enum(catch_all)]
     #[serde(untagged)]
     Unknown(u16),
+}
+
+// Status effect flag is two independent single-byte fields packed into u16:
+// low byte = cancellable-from-menu (any non-zero), high byte = no-timer-warning (0xFF).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, FromPrimitive, IntoPrimitive,
+)]
+#[repr(u8)]
+pub enum StatusEffectCancellable {
+    No = 0,
+    FromMenu = 0x80,
+
+    #[num_enum(catch_all)]
+    #[serde(untagged)]
+    Unknown(u8),
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, FromPrimitive, IntoPrimitive,
+)]
+#[repr(u8)]
+pub enum StatusEffectSystem {
+    Normal = 0,
+    NoTimerWarning = 0xFF,
+
+    #[num_enum(catch_all)]
+    #[serde(untagged)]
+    Unknown(u8) = 0x01,
 }
 
 #[derive(

@@ -1782,7 +1782,8 @@ pub fn save_spell_diff_with_text_paths(
 
     let merged_count = merged_spells.len();
     let mut output_data =
-        load_existing_menu_output(&out_yaml_path, out_dat_path.as_deref())?.unwrap_or(new_data);
+        load_existing_menu_output(&out_yaml_path, out_dat_path.as_deref(), Some(&new_data))?
+            .unwrap_or(new_data);
     set_spell_entries(&mut output_data, merged_spells)?;
     let written_dat =
         write_menu_table_outputs(&output_data, &out_yaml_path, out_dat_path.as_deref())?;
@@ -2184,7 +2185,8 @@ pub fn save_ability_diff_with_text_paths(
 
     let merged_count = merged_abilities.len();
     let mut output_data =
-        load_existing_menu_output(&out_yaml_path, out_dat_path.as_deref())?.unwrap_or(new_data);
+        load_existing_menu_output(&out_yaml_path, out_dat_path.as_deref(), Some(&new_data))?
+            .unwrap_or(new_data);
     set_ability_entries(&mut output_data, merged_abilities)?;
     let written_dat =
         write_menu_table_outputs(&output_data, &out_yaml_path, out_dat_path.as_deref())?;
@@ -2285,7 +2287,8 @@ fn load_spell_table(path: &PathBuf) -> Result<Value> {
         return decode_spell_dat(&bytes);
     }
 
-    if let Ok(parsed) = serde_yaml::from_slice::<Value>(&bytes) {
+    if let Ok(mut parsed) = serde_yaml::from_slice::<Value>(&bytes) {
+        normalize_menu_table_enum_values(&mut parsed);
         return Ok(parsed);
     }
 
@@ -2295,18 +2298,132 @@ fn load_spell_table(path: &PathBuf) -> Result<Value> {
 fn load_existing_menu_output(
     out_yaml_path: &Path,
     out_dat_path: Option<&Path>,
+    fallback_data: Option<&Value>,
 ) -> Result<Option<Value>> {
+    let mut fallback_values = Vec::new();
+    if let Some(out_dat_path) = out_dat_path {
+        if out_dat_path.is_file() {
+            fallback_values.push(load_spell_table(&out_dat_path.to_path_buf())?);
+        }
+    }
+    if let Some(fallback_data) = fallback_data {
+        fallback_values.push(fallback_data.clone());
+    }
+
     if out_yaml_path.is_file() {
-        return load_spell_table(&out_yaml_path.to_path_buf()).map(Some);
+        let mut output = load_spell_table(&out_yaml_path.to_path_buf())?;
+        for fallback in &fallback_values {
+            hydrate_menu_table_missing_fields(&mut output, fallback);
+        }
+        return Ok(Some(output));
     }
 
     if let Some(out_dat_path) = out_dat_path {
         if out_dat_path.is_file() {
-            return load_spell_table(&out_dat_path.to_path_buf()).map(Some);
+            return Ok(fallback_values.into_iter().next());
         }
     }
 
     Ok(None)
+}
+
+fn hydrate_menu_table_missing_fields(target: &mut Value, fallback: &Value) {
+    for section_type in ["Mgc_", "Comm"] {
+        hydrate_menu_section_missing_fields(target, fallback, section_type);
+    }
+}
+
+fn hydrate_menu_section_missing_fields(target: &mut Value, fallback: &Value, section_type: &str) {
+    let Some(target_entries) = get_menu_section_entries_mut(target, section_type) else {
+        return;
+    };
+    let Some(fallback_entries) = get_menu_section_entries_ref(fallback, section_type) else {
+        return;
+    };
+
+    let key_field = match section_type {
+        "Mgc_" => "index",
+        "Comm" => "id",
+        _ => return,
+    };
+
+    let fallback_by_key = fallback_entries
+        .iter()
+        .filter_map(|entry| {
+            let mapping = entry.as_mapping()?;
+            let key = mapping
+                .get(Value::String(key_field.to_string()))?
+                .as_u64()?;
+            Some((key, mapping))
+        })
+        .collect::<HashMap<_, _>>();
+
+    for (idx, target_entry) in target_entries.iter_mut().enumerate() {
+        let Some(target_mapping) = target_entry.as_mapping_mut() else {
+            continue;
+        };
+        let key = target_mapping
+            .get(Value::String(key_field.to_string()))
+            .and_then(Value::as_u64);
+        let fallback_mapping = key
+            .and_then(|key| fallback_by_key.get(&key).copied())
+            .or_else(|| fallback_entries.get(idx).and_then(Value::as_mapping));
+
+        let Some(fallback_mapping) = fallback_mapping else {
+            continue;
+        };
+
+        for (field, value) in fallback_mapping {
+            if !target_mapping.contains_key(field) {
+                target_mapping.insert(field.clone(), value.clone());
+            }
+        }
+    }
+}
+
+fn get_menu_section_entries_ref<'a>(root: &'a Value, section_type: &str) -> Option<&'a Vec<Value>> {
+    root.as_mapping()
+        .and_then(|mapping| mapping.get(Value::String("sections".to_string())))
+        .and_then(Value::as_sequence)
+        .and_then(|sections| {
+            sections.iter().find_map(|section| {
+                let section_mapping = section.as_mapping()?;
+                let current_section_type = section_mapping
+                    .get(Value::String("type".to_string()))?
+                    .as_str()?;
+                if current_section_type != section_type {
+                    return None;
+                }
+
+                section_mapping
+                    .get(Value::String("entries".to_string()))
+                    .and_then(Value::as_sequence)
+            })
+        })
+}
+
+fn get_menu_section_entries_mut<'a>(
+    root: &'a mut Value,
+    section_type: &str,
+) -> Option<&'a mut Vec<Value>> {
+    root.as_mapping_mut()
+        .and_then(|mapping| mapping.get_mut(Value::String("sections".to_string())))
+        .and_then(Value::as_sequence_mut)
+        .and_then(|sections| {
+            sections.iter_mut().find_map(|section| {
+                let section_mapping = section.as_mapping_mut()?;
+                let current_section_type = section_mapping
+                    .get(Value::String("type".to_string()))?
+                    .as_str()?;
+                if current_section_type != section_type {
+                    return None;
+                }
+
+                section_mapping
+                    .get_mut(Value::String("entries".to_string()))
+                    .and_then(Value::as_sequence_mut)
+            })
+        })
 }
 
 fn write_menu_table_outputs(
@@ -2314,25 +2431,189 @@ fn write_menu_table_outputs(
     out_yaml_path: &Path,
     out_dat_path: Option<&Path>,
 ) -> Result<Option<String>> {
+    let mut data = data.clone();
+    normalize_menu_table_enum_values(&mut data);
+
     if let Some(parent) = out_yaml_path.parent() {
         fs::create_dir_all(parent)?;
     }
 
     let yaml_file = File::create(out_yaml_path)?;
-    serde_yaml::to_writer(BufWriter::new(yaml_file), data)?;
+    serde_yaml::to_writer(BufWriter::new(yaml_file), &data)?;
 
     if let Some(dat_path) = out_dat_path {
         if let Some(parent) = dat_path.parent() {
             fs::create_dir_all(parent)?;
         }
 
-        let dat: MenuTable = serde_yaml::from_value(data.clone())?;
+        let dat: MenuTable = serde_yaml::from_value(data)?;
         let bytes = dat.to_bytes()?;
         fs::write(dat_path, bytes)?;
         Ok(Some(dat_path.display().to_string()))
     } else {
         Ok(None)
     }
+}
+
+fn normalize_menu_table_enum_values(root: &mut Value) {
+    let Some(sections) = root
+        .as_mapping_mut()
+        .and_then(|mapping| mapping.get_mut(Value::String("sections".to_string())))
+        .and_then(Value::as_sequence_mut)
+    else {
+        return;
+    };
+
+    for section in sections {
+        let Some(section_mapping) = section.as_mapping_mut() else {
+            continue;
+        };
+        let Some(section_type) = section_mapping
+            .get(Value::String("type".to_string()))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+        else {
+            continue;
+        };
+        let Some(entries) = section_mapping
+            .get_mut(Value::String("entries".to_string()))
+            .and_then(Value::as_sequence_mut)
+        else {
+            continue;
+        };
+
+        for entry in entries {
+            let Some(entry_mapping) = entry.as_mapping_mut() else {
+                continue;
+            };
+
+            match section_type.as_str() {
+                "Mgc_" | "Comm" => {
+                    normalize_numeric_enum_field(
+                        entry_mapping,
+                        "range",
+                        spell_distance_name_from_number,
+                    );
+                    normalize_numeric_enum_field(
+                        entry_mapping,
+                        "aoe_range",
+                        spell_distance_name_from_number,
+                    );
+                    normalize_numeric_enum_field(
+                        entry_mapping,
+                        "area_shape",
+                        area_shape_name_from_number,
+                    );
+                    normalize_numeric_enum_field(
+                        entry_mapping,
+                        "valid_target_type",
+                        valid_target_type_name_from_number,
+                    );
+                }
+                _ => {}
+            }
+
+            if section_type == "Comm" {
+                normalize_numeric_enum_field(
+                    entry_mapping,
+                    "tp_modifier",
+                    modifier_type_name_from_number,
+                );
+            }
+        }
+    }
+}
+
+fn normalize_numeric_enum_field(
+    mapping: &mut Mapping,
+    key: &str,
+    name_from_number: fn(i64) -> Option<&'static str>,
+) {
+    let field_key = Value::String(key.to_string());
+    let Some(value) = mapping.get_mut(&field_key) else {
+        return;
+    };
+    let Some(number) = value
+        .as_i64()
+        .or_else(|| value.as_u64().and_then(|number| i64::try_from(number).ok()))
+    else {
+        return;
+    };
+    let Some(name) = name_from_number(number) else {
+        return;
+    };
+
+    *value = Value::String(name.to_string());
+}
+
+fn spell_distance_name_from_number(number: i64) -> Option<&'static str> {
+    Some(match number {
+        0 => "None",
+        1 => "D1",
+        2 => "D3",
+        3 => "D4",
+        4 => "D5",
+        5 => "D6",
+        6 => "D7",
+        7 => "D8",
+        8 => "D10",
+        9 => "D12",
+        10 => "D14",
+        11 => "D16",
+        12 => "D20",
+        13 => "D25",
+        14 => "D30",
+        15 => "SelfTarget",
+        _ => return None,
+    })
+}
+
+fn area_shape_name_from_number(number: i64) -> Option<&'static str> {
+    Some(match number {
+        0 => "Single",
+        1 => "Sphere",
+        2 => "Cone",
+        3 => "CasterSphere",
+        _ => return None,
+    })
+}
+
+fn valid_target_type_name_from_number(number: i64) -> Option<&'static str> {
+    Some(match number {
+        0 => "All",
+        1 => "SelfTarget",
+        2 => "SelfAoe",
+        3 => "SelfAoe2",
+        5 => "MobSelfAoe",
+        6 => "Party",
+        7 => "PartyAoe",
+        8 => "Luopan",
+        9 => "Pet",
+        10 => "Pc",
+        12 => "SelfPet",
+        13 => "Mob",
+        14 => "MobAoe",
+        15 => "Dead",
+        _ => return None,
+    })
+}
+
+fn modifier_type_name_from_number(number: i64) -> Option<&'static str> {
+    Some(match number {
+        0 => "RadiusOrNone",
+        1 => "Damage",
+        2 => "Accuracy",
+        4 => "Attack",
+        5 => "IgnoreDefense",
+        6 => "Crit",
+        7 => "Misc",
+        8 => "AddEffect",
+        9 => "Duration",
+        10 => "Aftermath",
+        13 => "Regen",
+        18 => "Enmity",
+        _ => return None,
+    })
 }
 
 fn load_dmsg_table(path: &PathBuf) -> Result<DmsgTable> {
@@ -3145,8 +3426,12 @@ pub fn reset_menu_section_to_retail_base(
     let retail_entries = get_menu_section_entries(&retail_data, section_type)?;
     let custom_yaml_path = project_yaml_path_for_dat_path(&custom_dat_path)
         .unwrap_or_else(|| custom_dat_path.with_extension("yml"));
-    let mut output_data = load_existing_menu_output(&custom_yaml_path, Some(&custom_dat_path))?
-        .unwrap_or(retail_data);
+    let mut output_data = load_existing_menu_output(
+        &custom_yaml_path,
+        Some(&custom_dat_path),
+        Some(&retail_data),
+    )?
+    .unwrap_or(retail_data);
 
     set_menu_section_entries(&mut output_data, section_type, retail_entries)?;
     write_menu_table_outputs(&output_data, &custom_yaml_path, Some(&custom_dat_path))?;
@@ -3946,6 +4231,156 @@ mod tests {
         assert_eq!(saved_row.new_aoe_range.as_deref(), Some("D6"));
         assert_eq!(saved_row.new_area_shape.as_deref(), Some("Cone"));
         assert_eq!(saved_row.new_valid_target_type.as_deref(), Some("PartyAoe"));
+
+        fs::remove_dir_all(temp_dir)?;
+        Ok(())
+    }
+
+    #[test]
+    fn ability_editor_save_accepts_numeric_menu_enum_yaml() -> Result<()> {
+        let temp_dir = temp_test_dir("ability_numeric_enums")?;
+        let source_yaml_path = temp_dir.join("source.yml");
+        let out_yaml_path = temp_dir.join("menu.yml");
+        let out_dat_path = temp_dir.join("menu.DAT");
+
+        let mut source_data = load_spell_table(&menu_dat_path())?;
+        let mut abilities = get_ability_entries(&source_data)?.to_vec();
+        let ability = abilities
+            .iter_mut()
+            .find(|ability| get_ability_id(ability) == Some(6))
+            .ok_or_else(|| anyhow::anyhow!("Expected ability id 6 in menu fixture."))?;
+        let mapping = ability
+            .as_mapping_mut()
+            .ok_or_else(|| anyhow::anyhow!("Expected ability id 6 to be a mapping."))?;
+        mapping.insert(Value::String("range".to_string()), Value::Number(12.into()));
+        mapping.insert(
+            Value::String("aoe_range".to_string()),
+            Value::Number(5.into()),
+        );
+        mapping.insert(
+            Value::String("area_shape".to_string()),
+            Value::Number(2.into()),
+        );
+        mapping.insert(
+            Value::String("valid_target_type".to_string()),
+            Value::Number(12.into()),
+        );
+        set_ability_entries(&mut source_data, abilities)?;
+
+        let yaml_file = File::create(&source_yaml_path)?;
+        serde_yaml::to_writer(BufWriter::new(yaml_file), &source_data)?;
+
+        let diff = compare_ability_files_with_text_paths(
+            source_yaml_path.clone(),
+            source_yaml_path.clone(),
+            None,
+        )?;
+        let expected_written_count = diff.new_count;
+        let mut row = diff
+            .rows
+            .into_iter()
+            .find(|row| row.new_id == Some(6))
+            .ok_or_else(|| anyhow::anyhow!("Expected ability id 6 in numeric enum YAML."))?;
+
+        assert_eq!(row.new_range.as_deref(), Some("D20"));
+        assert_eq!(row.new_aoe_range.as_deref(), Some("D6"));
+        assert_eq!(row.new_area_shape.as_deref(), Some("Cone"));
+        assert_eq!(row.new_valid_target_type.as_deref(), Some("SelfPet"));
+
+        row.new_charges_required = Some(2);
+
+        let save = save_ability_diff_with_text_paths(
+            source_yaml_path.clone(),
+            source_yaml_path,
+            vec![row],
+            out_yaml_path,
+            Some(out_dat_path.clone()),
+            None,
+        )?;
+        assert_eq!(save.written_count, expected_written_count);
+
+        let saved =
+            compare_ability_files_with_text_paths(out_dat_path.clone(), out_dat_path, None)?;
+        let saved_row = saved
+            .rows
+            .into_iter()
+            .find(|row| row.new_id == Some(6))
+            .ok_or_else(|| anyhow::anyhow!("Expected saved ability id 6."))?;
+
+        assert_eq!(saved_row.new_charges_required, Some(2));
+        assert_eq!(saved_row.new_range.as_deref(), Some("D20"));
+        assert_eq!(saved_row.new_aoe_range.as_deref(), Some("D6"));
+        assert_eq!(saved_row.new_area_shape.as_deref(), Some("Cone"));
+        assert_eq!(saved_row.new_valid_target_type.as_deref(), Some("SelfPet"));
+
+        fs::remove_dir_all(temp_dir)?;
+        Ok(())
+    }
+
+    #[test]
+    fn ability_editor_save_hydrates_stale_spell_yaml_fields() -> Result<()> {
+        let temp_dir = temp_test_dir("ability_stale_spell_yaml")?;
+        let out_yaml_path = temp_dir.join("menu.yml");
+        let out_dat_path = temp_dir.join("menu.DAT");
+
+        let mut stale_output = load_spell_table(&menu_dat_path())?;
+        let mut spells = get_spell_entries(&stale_output)?.to_vec();
+        let spell = spells
+            .iter_mut()
+            .find(|spell| get_spell_index(spell) == Some(14))
+            .ok_or_else(|| anyhow::anyhow!("Expected spell index 14 in menu fixture."))?;
+        let mapping = spell
+            .as_mapping_mut()
+            .ok_or_else(|| anyhow::anyhow!("Expected spell index 14 to be a mapping."))?;
+        mapping.remove(Value::String("unknown_0x42".to_string()));
+        mapping.remove(Value::String("modifiers".to_string()));
+        mapping.remove(Value::String("modifiers_ex".to_string()));
+        mapping.remove(Value::String("gifts_required".to_string()));
+        set_spell_entries(&mut stale_output, spells)?;
+
+        let yaml_file = File::create(&out_yaml_path)?;
+        serde_yaml::to_writer(BufWriter::new(yaml_file), &stale_output)?;
+
+        let menu_path = menu_dat_path();
+        let diff =
+            compare_ability_files_with_text_paths(menu_path.clone(), menu_path.clone(), None)?;
+        let expected_written_count = diff.new_count;
+        let mut row = diff
+            .rows
+            .into_iter()
+            .find(|row| row.new_id == Some(6))
+            .ok_or_else(|| anyhow::anyhow!("Expected ability id 6 in menu fixture."))?;
+        row.new_charges_required = Some(3);
+
+        let save = save_ability_diff_with_text_paths(
+            menu_path.clone(),
+            menu_path,
+            vec![row],
+            out_yaml_path.clone(),
+            Some(out_dat_path.clone()),
+            None,
+        )?;
+        assert_eq!(save.written_count, expected_written_count);
+
+        let saved_spell_data = load_spell_table(&out_yaml_path)?;
+        let saved_spell = get_spell_entries(&saved_spell_data)?
+            .iter()
+            .find(|spell| get_spell_index(spell) == Some(14))
+            .ok_or_else(|| anyhow::anyhow!("Expected saved spell index 14."))?;
+        assert_eq!(get_spell_range(saved_spell).as_deref(), Some("D20"));
+        assert_eq!(
+            get_spell_valid_target_type(saved_spell).as_deref(),
+            Some("Pc")
+        );
+
+        let saved =
+            compare_ability_files_with_text_paths(out_dat_path.clone(), out_dat_path, None)?;
+        let saved_row = saved
+            .rows
+            .into_iter()
+            .find(|row| row.new_id == Some(6))
+            .ok_or_else(|| anyhow::anyhow!("Expected saved ability id 6."))?;
+        assert_eq!(saved_row.new_charges_required, Some(3));
 
         fs::remove_dir_all(temp_dir)?;
         Ok(())

@@ -10,7 +10,7 @@ use crate::{
         decode_data_block_masked, decode_text_block, encode_data_block_masked, encode_text_block,
     },
 };
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use common::{
     byte_walker::{BufferedByteWalker, ByteWalker},
     expect, expect_msg, get_padding, get_padding_16,

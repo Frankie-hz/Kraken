@@ -3822,3 +3822,132 @@ fn normalize_compare_key(relative_path: &Path) -> String {
 
     normalized.to_ascii_lowercase()
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::*;
+
+    fn menu_dat_path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../crates/dats/resources/test/menu.DAT")
+    }
+
+    fn temp_test_dir(test_name: &str) -> Result<PathBuf> {
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "kraken_entity_diff_{test_name}_{}_{}",
+            std::process::id(),
+            nanos
+        ));
+        fs::create_dir_all(&path)?;
+        Ok(path)
+    }
+
+    #[test]
+    fn spell_editor_save_preserves_upstream_aoe_fields() -> Result<()> {
+        let menu_path = menu_dat_path();
+        let diff = compare_spell_files_with_text_paths(menu_path.clone(), menu_path.clone(), None)?;
+        let expected_written_count = diff.new_count;
+        let mut row = diff
+            .rows
+            .into_iter()
+            .find(|row| row.new_index == Some(14))
+            .ok_or_else(|| anyhow::anyhow!("Expected spell index 14 in menu fixture."))?;
+
+        assert_eq!(row.new_range.as_deref(), Some("D20"));
+        assert_eq!(row.new_aoe_range.as_deref(), Some("None"));
+        assert_eq!(row.new_area_shape.as_deref(), Some("Single"));
+        assert_eq!(row.new_valid_target_type.as_deref(), Some("Pc"));
+
+        row.new_range = Some("D25".to_string());
+        row.new_aoe_range = Some("D3".to_string());
+        row.new_area_shape = Some("Sphere".to_string());
+        row.new_valid_target_type = Some("PartyAoe".to_string());
+
+        let temp_dir = temp_test_dir("spell_editor")?;
+        let out_yaml_path = temp_dir.join("menu.yml");
+        let out_dat_path = temp_dir.join("menu.DAT");
+
+        let save = save_spell_diff_with_text_paths(
+            menu_path.clone(),
+            menu_path,
+            vec![row],
+            out_yaml_path,
+            Some(out_dat_path.clone()),
+            None,
+        )?;
+        assert_eq!(save.written_count, expected_written_count);
+
+        let saved = compare_spell_files_with_text_paths(out_dat_path.clone(), out_dat_path, None)?;
+        let saved_row = saved
+            .rows
+            .into_iter()
+            .find(|row| row.new_index == Some(14))
+            .ok_or_else(|| anyhow::anyhow!("Expected saved spell index 14."))?;
+
+        assert_eq!(saved_row.new_range.as_deref(), Some("D25"));
+        assert_eq!(saved_row.new_aoe_range.as_deref(), Some("D3"));
+        assert_eq!(saved_row.new_area_shape.as_deref(), Some("Sphere"));
+        assert_eq!(saved_row.new_valid_target_type.as_deref(), Some("PartyAoe"));
+
+        fs::remove_dir_all(temp_dir)?;
+        Ok(())
+    }
+
+    #[test]
+    fn ability_editor_save_preserves_kraken_decoded_fields() -> Result<()> {
+        let menu_path = menu_dat_path();
+        let diff =
+            compare_ability_files_with_text_paths(menu_path.clone(), menu_path.clone(), None)?;
+        let expected_written_count = diff.new_count;
+        let mut row = diff
+            .rows
+            .into_iter()
+            .find(|row| row.new_id == Some(6))
+            .ok_or_else(|| anyhow::anyhow!("Expected ability id 6 in menu fixture."))?;
+
+        assert_eq!(row.new_charges_required, Some(0));
+        assert_eq!(row.new_range.as_deref(), Some("D3"));
+        assert_eq!(row.new_aoe_range.as_deref(), Some("D4"));
+        assert_eq!(row.new_area_shape.as_deref(), Some("Sphere"));
+        assert_eq!(row.new_valid_target_type.as_deref(), Some("MobAoe"));
+
+        row.new_charges_required = Some(1);
+        row.new_range = Some("D20".to_string());
+        row.new_aoe_range = Some("D6".to_string());
+        row.new_area_shape = Some("Cone".to_string());
+        row.new_valid_target_type = Some("PartyAoe".to_string());
+
+        let temp_dir = temp_test_dir("ability_editor")?;
+        let out_yaml_path = temp_dir.join("menu.yml");
+        let out_dat_path = temp_dir.join("menu.DAT");
+
+        let save = save_ability_diff_with_text_paths(
+            menu_path.clone(),
+            menu_path,
+            vec![row],
+            out_yaml_path,
+            Some(out_dat_path.clone()),
+            None,
+        )?;
+        assert_eq!(save.written_count, expected_written_count);
+
+        let saved =
+            compare_ability_files_with_text_paths(out_dat_path.clone(), out_dat_path, None)?;
+        let saved_row = saved
+            .rows
+            .into_iter()
+            .find(|row| row.new_id == Some(6))
+            .ok_or_else(|| anyhow::anyhow!("Expected saved ability id 6."))?;
+
+        assert_eq!(saved_row.new_charges_required, Some(1));
+        assert_eq!(saved_row.new_range.as_deref(), Some("D20"));
+        assert_eq!(saved_row.new_aoe_range.as_deref(), Some("D6"));
+        assert_eq!(saved_row.new_area_shape.as_deref(), Some("Cone"));
+        assert_eq!(saved_row.new_valid_target_type.as_deref(), Some("PartyAoe"));
+
+        fs::remove_dir_all(temp_dir)?;
+        Ok(())
+    }
+}

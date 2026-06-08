@@ -4,11 +4,10 @@ use crate::{
     base::{Dat, DatByZone, ZoneId},
     dat_format::DatFormat,
     formats::{
-        auto_translate::AutoTranslate,
-        dialog::Dialog, dmsg_table::DmsgTable, entity_names::EntityNames, events::Events,
-        furniture_data::FurnitureData, item_info::ItemInfoTable, menu_table::MenuTable,
-        merit_category_table::MeritCategoryTable, merit_table::MeritTable,
-        old_data_menu_table::OldDataMenuTable,
+        auto_translate::AutoTranslate, dialog::Dialog, dmsg_table::DmsgTable,
+        entity_names::EntityNames, events::Events, furniture_data::FurnitureData,
+        item_info::ItemInfoTable, menu_table::MenuTable, merit_category_table::MeritCategoryTable,
+        merit_table::MeritTable, old_data_menu_table::OldDataMenuTable,
         status_info::StatusInfoTable, xistring_table::XiStringTable, zone_data::ZoneData,
     },
 };

@@ -175,12 +175,18 @@ mod tests {
             "You have been knocked unconscious.".to_string()
         );
         assert_eq!(res.status_infos[0].cancellable, StatusEffectCancellable::No);
-        assert_eq!(res.status_infos[0].system, StatusEffectSystem::NoTimerWarning);
+        assert_eq!(
+            res.status_infos[0].system,
+            StatusEffectSystem::NoTimerWarning
+        );
 
         assert_eq!(res.status_infos[1].cancellable, StatusEffectCancellable::No);
         assert_eq!(res.status_infos[1].system, StatusEffectSystem::Normal);
 
-        assert_eq!(res.status_infos[32].cancellable, StatusEffectCancellable::FromMenu);
+        assert_eq!(
+            res.status_infos[32].cancellable,
+            StatusEffectCancellable::FromMenu
+        );
         assert_eq!(res.status_infos[32].system, StatusEffectSystem::Normal);
 
         assert_eq!(

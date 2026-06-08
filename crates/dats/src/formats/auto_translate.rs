@@ -96,14 +96,13 @@ impl AtCategory {
             let entry_id = walker.step::<u8>()?;
             let str_len = walker.step::<u8>()? as usize;
             let text = Decoder::decode_simple(walker.take_bytes(str_len)?)?;
-            entries.push(AtEntry {
-                id: entry_id,
-                text,
-            });
+            entries.push(AtEntry { id: entry_id, text });
         }
 
         if walker.offset() != entries_end {
-            return Err(anyhow!("Auto-translate entries section byte_size mismatch."));
+            return Err(anyhow!(
+                "Auto-translate entries section byte_size mismatch."
+            ));
         }
 
         Ok(AtCategory { id, name, entries })

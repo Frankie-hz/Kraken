@@ -226,26 +226,138 @@ pub struct AbilityInfo {
     unknown_22: i16,
     #[serde(default)]
     unknown_24: u8,
-    #[serde(default)]
+    #[serde(default, with = "serde_hex")]
+    unknowns: Vec<u8>,
+    #[serde(default, skip_serializing)]
     unknown_25: u8,
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     unknown_26: u8,
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     unknown_27: u8,
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     unknown_28: u8,
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     unknown_29: u8,
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     unknown_2a: u8,
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     unknown_2b: u8,
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     unknown_2c: u8,
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     unknown_2d: u8,
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     unknown_2e: u8,
+}
+
+const ABILITY_UNKNOWNS_LEN: usize = 20;
+const ABILITY_TRAILING_UNKNOWNS_LEN: usize = 10;
+
+impl AbilityInfo {
+    fn unknown_prefix_from_parts(
+        unknown_0e: u8,
+        unknown_1c: i16,
+        unknown_1e: i16,
+        unknown_20: u8,
+        unknown_21: u8,
+        unknown_22: i16,
+        unknown_24: u8,
+    ) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(ABILITY_UNKNOWNS_LEN - ABILITY_TRAILING_UNKNOWNS_LEN);
+        bytes.push(unknown_0e);
+        bytes.extend_from_slice(&unknown_1c.to_le_bytes());
+        bytes.extend_from_slice(&unknown_1e.to_le_bytes());
+        bytes.push(unknown_20);
+        bytes.push(unknown_21);
+        bytes.extend_from_slice(&unknown_22.to_le_bytes());
+        bytes.push(unknown_24);
+        bytes
+    }
+
+    fn unknown_tail_from_parts(
+        unknown_25: u8,
+        unknown_26: u8,
+        unknown_27: u8,
+        unknown_28: u8,
+        unknown_29: u8,
+        unknown_2a: u8,
+        unknown_2b: u8,
+        unknown_2c: u8,
+        unknown_2d: u8,
+        unknown_2e: u8,
+    ) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(ABILITY_TRAILING_UNKNOWNS_LEN);
+        bytes.push(unknown_25);
+        bytes.push(unknown_26);
+        bytes.push(unknown_27);
+        bytes.push(unknown_28);
+        bytes.push(unknown_29);
+        bytes.push(unknown_2a);
+        bytes.push(unknown_2b);
+        bytes.push(unknown_2c);
+        bytes.push(unknown_2d);
+        bytes.push(unknown_2e);
+        bytes
+    }
+
+    fn unknown_prefix(&self) -> Vec<u8> {
+        Self::unknown_prefix_from_parts(
+            self.unknown_0e,
+            self.unknown_1c,
+            self.unknown_1e,
+            self.unknown_20,
+            self.unknown_21,
+            self.unknown_22,
+            self.unknown_24,
+        )
+    }
+
+    fn legacy_unknown_tail(&self) -> Vec<u8> {
+        Self::unknown_tail_from_parts(
+            self.unknown_25,
+            self.unknown_26,
+            self.unknown_27,
+            self.unknown_28,
+            self.unknown_29,
+            self.unknown_2a,
+            self.unknown_2b,
+            self.unknown_2c,
+            self.unknown_2d,
+            self.unknown_2e,
+        )
+    }
+
+    fn normalized_unknown_tail(&self) -> Result<Vec<u8>> {
+        if self.unknowns.is_empty() {
+            return Ok(self.legacy_unknown_tail());
+        }
+
+        if self.unknowns.len() == ABILITY_UNKNOWNS_LEN {
+            return Ok(
+                self.unknowns[ABILITY_UNKNOWNS_LEN - ABILITY_TRAILING_UNKNOWNS_LEN..].to_vec(),
+            );
+        }
+
+        if self.unknowns.len() != ABILITY_TRAILING_UNKNOWNS_LEN {
+            return Err(anyhow!(
+                "AbilityInfo unknowns must be {} trailing bytes, found {}",
+                ABILITY_TRAILING_UNKNOWNS_LEN,
+                self.unknowns.len()
+            ));
+        }
+
+        Ok(self.unknowns.clone())
+    }
+
+    fn normalized_unknowns(&self) -> Result<Vec<u8>> {
+        if self.unknowns.len() == ABILITY_UNKNOWNS_LEN {
+            return Ok(self.unknowns.clone());
+        }
+
+        let mut unknowns = self.unknown_prefix();
+        unknowns.extend_from_slice(&self.normalized_unknown_tail()?);
+        Ok(unknowns)
+    }
 }
 
 impl SectionInfo for AbilityInfo {
@@ -259,41 +371,78 @@ impl SectionInfo for AbilityInfo {
         decode_data_block_masked(&mut data_bytes);
         let mut data_walker = BufferedByteWalker::on(data_bytes);
 
+        let id = data_walker.step::<u16>()?;
+        let ability_type = AbilityType::from(data_walker.step::<u8>()?);
+        let icon_id = data_walker.step::<u8>()?;
+        let icon2_id = data_walker.step::<u16>()?;
+        let charges_required = data_walker.step::<u16>()?;
+        let recast_id = data_walker.step::<u16>()?;
+        let valid_targets = ValidTargets::from_bits(data_walker.step::<u16>()?).unwrap_or_default();
+        let tp_cost = data_walker.step::<i16>()?;
+        let unknown_0e = data_walker.step::<u8>()?;
+        let level = data_walker.step::<u8>()? as i8;
+        let range = SpellDistance::from(data_walker.step::<u8>()?);
+        let aoe_range = SpellDistance::from(data_walker.step::<u8>()?);
+        let area_shape = AreaShapeType::from(data_walker.step::<u8>()?);
+        let valid_target_type = CommValidTargetType::from(data_walker.step::<u16>()?);
+        let tp_modifier = ModifierType::from(data_walker.step::<u8>()? as i8);
+        let tp_modifier_values = (0..3)
+            .map(|_| data_walker.step::<i16>())
+            .collect::<Result<Vec<_>>>()?;
+        let unknown_1c = data_walker.step::<i16>()?;
+        let unknown_1e = data_walker.step::<i16>()?;
+        let unknown_20 = data_walker.step::<u8>()?;
+        let unknown_21 = data_walker.step::<u8>()?;
+        let unknown_22 = data_walker.step::<i16>()?;
+        let unknown_24 = data_walker.step::<u8>()?;
+        let unknown_25 = data_walker.step::<u8>()?;
+        let unknown_26 = data_walker.step::<u8>()?;
+        let unknown_27 = data_walker.step::<u8>()?;
+        let unknown_28 = data_walker.step::<u8>()?;
+        let unknown_29 = data_walker.step::<u8>()?;
+        let unknown_2a = data_walker.step::<u8>()?;
+        let unknown_2b = data_walker.step::<u8>()?;
+        let unknown_2c = data_walker.step::<u8>()?;
+        let unknown_2d = data_walker.step::<u8>()?;
+        let unknown_2e = data_walker.step::<u8>()?;
+
         let info = AbilityInfo {
-            id: data_walker.step::<u16>()?,
-            ability_type: AbilityType::from(data_walker.step::<u8>()?),
-            icon_id: data_walker.step::<u8>()?,
-            icon2_id: data_walker.step::<u16>()?,
-            charges_required: data_walker.step::<u16>()?,
-            recast_id: data_walker.step::<u16>()?,
-            valid_targets: ValidTargets::from_bits(data_walker.step::<u16>()?).unwrap_or_default(),
-            tp_cost: data_walker.step::<i16>()?,
-            unknown_0e: data_walker.step::<u8>()?,
-            level: data_walker.step::<u8>()? as i8,
-            range: SpellDistance::from(data_walker.step::<u8>()?),
-            aoe_range: SpellDistance::from(data_walker.step::<u8>()?),
-            area_shape: AreaShapeType::from(data_walker.step::<u8>()?),
-            valid_target_type: CommValidTargetType::from(data_walker.step::<u16>()?),
-            tp_modifier: ModifierType::from(data_walker.step::<u8>()? as i8),
-            tp_modifier_values: (0..3)
-                .map(|_| data_walker.step::<i16>())
-                .collect::<Result<Vec<_>>>()?,
-            unknown_1c: data_walker.step::<i16>()?,
-            unknown_1e: data_walker.step::<i16>()?,
-            unknown_20: data_walker.step::<u8>()?,
-            unknown_21: data_walker.step::<u8>()?,
-            unknown_22: data_walker.step::<i16>()?,
-            unknown_24: data_walker.step::<u8>()?,
-            unknown_25: data_walker.step::<u8>()?,
-            unknown_26: data_walker.step::<u8>()?,
-            unknown_27: data_walker.step::<u8>()?,
-            unknown_28: data_walker.step::<u8>()?,
-            unknown_29: data_walker.step::<u8>()?,
-            unknown_2a: data_walker.step::<u8>()?,
-            unknown_2b: data_walker.step::<u8>()?,
-            unknown_2c: data_walker.step::<u8>()?,
-            unknown_2d: data_walker.step::<u8>()?,
-            unknown_2e: data_walker.step::<u8>()?,
+            id,
+            ability_type,
+            icon_id,
+            icon2_id,
+            charges_required,
+            recast_id,
+            valid_targets,
+            tp_cost,
+            level,
+            range,
+            aoe_range,
+            area_shape,
+            valid_target_type,
+            tp_modifier,
+            tp_modifier_values,
+            unknown_0e,
+            unknown_1c,
+            unknown_1e,
+            unknown_20,
+            unknown_21,
+            unknown_22,
+            unknown_24,
+            unknowns: AbilityInfo::unknown_tail_from_parts(
+                unknown_25, unknown_26, unknown_27, unknown_28, unknown_29, unknown_2a, unknown_2b,
+                unknown_2c, unknown_2d, unknown_2e,
+            ),
+            unknown_25,
+            unknown_26,
+            unknown_27,
+            unknown_28,
+            unknown_29,
+            unknown_2a,
+            unknown_2b,
+            unknown_2c,
+            unknown_2d,
+            unknown_2e,
         };
 
         data_walker.expect_msg::<u8>(0xFF, "End of ability marker")?;
@@ -303,6 +452,7 @@ impl SectionInfo for AbilityInfo {
 
     fn write<T: WritingByteWalker>(&self, walker: &mut T) -> Result<()> {
         let mut data_walker = VecByteWalker::with_size(Self::entry_size());
+        let unknowns = self.normalized_unknowns()?;
 
         data_walker.write(self.id);
         data_walker.write::<u8>(self.ability_type.into());
@@ -312,7 +462,7 @@ impl SectionInfo for AbilityInfo {
         data_walker.write(self.recast_id);
         data_walker.write(self.valid_targets.bits());
         data_walker.write(self.tp_cost);
-        data_walker.write(self.unknown_0e);
+        data_walker.write(unknowns[0]);
         data_walker.write(self.level as u8);
         data_walker.write::<u8>(self.range.into());
         data_walker.write::<u8>(self.aoe_range.into());
@@ -328,22 +478,7 @@ impl SectionInfo for AbilityInfo {
         for tp_modifier_value in &self.tp_modifier_values {
             data_walker.write(*tp_modifier_value);
         }
-        data_walker.write(self.unknown_1c);
-        data_walker.write(self.unknown_1e);
-        data_walker.write(self.unknown_20);
-        data_walker.write(self.unknown_21);
-        data_walker.write(self.unknown_22);
-        data_walker.write(self.unknown_24);
-        data_walker.write(self.unknown_25);
-        data_walker.write(self.unknown_26);
-        data_walker.write(self.unknown_27);
-        data_walker.write(self.unknown_28);
-        data_walker.write(self.unknown_29);
-        data_walker.write(self.unknown_2a);
-        data_walker.write(self.unknown_2b);
-        data_walker.write(self.unknown_2c);
-        data_walker.write(self.unknown_2d);
-        data_walker.write(self.unknown_2e);
+        data_walker.write_bytes(&unknowns[1..]);
 
         data_walker.write::<u8>(0xFF);
 
@@ -837,7 +972,7 @@ mod tests {
         formats::menu_table::Section,
     };
 
-    use super::MenuTable;
+    use super::{AbilityInfo, MenuTable};
 
     #[test]
     pub fn menu_table() {
@@ -953,6 +1088,7 @@ mod tests {
         assert_eq!(ability.unknown_2c, 0);
         assert_eq!(ability.unknown_2d, 0);
         assert_eq!(ability.unknown_2e, 0);
+        assert_eq!(ability.unknowns, vec![0; 10]);
 
         let ability_yaml = serde_yaml::to_string(ability).unwrap();
         assert!(!ability_yaml.contains("name:"));
@@ -968,12 +1104,51 @@ mod tests {
         assert!(ability_yaml.contains("tp_modifier_values:"));
         assert!(ability_yaml.contains("unknown_0e: 0"));
         assert!(ability_yaml.contains("unknown_1c: 0"));
-        assert!(ability_yaml.contains("unknown_26: 0"));
-        assert!(ability_yaml.contains("unknown_2e: 0"));
+        assert!(ability_yaml.contains("unknown_1e: 0"));
+        assert!(ability_yaml.contains("unknown_20: 0"));
+        assert!(ability_yaml.contains("unknown_21: 0"));
+        assert!(ability_yaml.contains("unknown_22: 0"));
+        assert!(ability_yaml.contains("unknown_24: 0"));
+        assert!(ability_yaml.contains("unknowns: '0x00000000000000000000'"));
+        assert!(!ability_yaml.contains("unknown_25:"));
+        assert!(!ability_yaml.contains("unknown_2e:"));
         assert!(!ability_yaml.contains("mp_cost:"));
         assert!(!ability_yaml.contains("unknown1:"));
         assert!(!ability_yaml.contains("shared_timer_id:"));
-        assert!(!ability_yaml.contains("unknowns:"));
+
+        let legacy_ability_yaml = ability_yaml
+            .replace("unknown_0e: 0", "unknown_0e: 1")
+            .replace("unknown_1c: 0", "unknown_1c: 515")
+            .replace("unknown_1e: 0", "unknown_1e: -2")
+            .replace("unknown_20: 0", "unknown_20: 4")
+            .replace("unknown_21: 0", "unknown_21: 5")
+            .replace("unknown_22: 0", "unknown_22: 1541")
+            .replace("unknown_24: 0", "unknown_24: 7")
+            .replace(
+                "unknowns: '0x00000000000000000000'",
+                "unknown_25: 8\nunknown_26: 9\nunknown_27: 10\nunknown_28: 11\nunknown_29: 12\nunknown_2a: 13\nunknown_2b: 14\nunknown_2c: 15\nunknown_2d: 16\nunknown_2e: 17",
+            );
+        let legacy_ability: AbilityInfo = serde_yaml::from_str(&legacy_ability_yaml).unwrap();
+        assert!(legacy_ability.unknowns.is_empty());
+        assert_eq!(
+            legacy_ability.normalized_unknowns().unwrap(),
+            vec![
+                1, 3, 2, 254, 255, 4, 5, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17
+            ]
+        );
+
+        let full_combined_ability_yaml = ability_yaml.replace(
+            "unknowns: '0x00000000000000000000'",
+            "unknowns: '0x010302feff040505060708090a0b0c0d0e0f1011'",
+        );
+        let full_combined_ability: AbilityInfo =
+            serde_yaml::from_str(&full_combined_ability_yaml).unwrap();
+        assert_eq!(
+            full_combined_ability.normalized_unknowns().unwrap(),
+            vec![
+                1, 3, 2, 254, 255, 4, 5, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17
+            ]
+        );
 
         assert_eq!(res.to_bytes().unwrap(), fs::read(&dat_path).unwrap());
     }

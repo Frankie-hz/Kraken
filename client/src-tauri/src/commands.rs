@@ -473,6 +473,35 @@ fn copy_retail_base_to_custom(
     Ok(destination_path)
 }
 
+fn copy_retail_base_to_custom_if_missing(
+    relative_path: &str,
+    project_root: &Path,
+) -> Result<PathBuf, AppError> {
+    let destination_path = custom_path(project_root, relative_path);
+    if destination_path.is_file() {
+        return Ok(destination_path);
+    }
+
+    copy_retail_base_to_custom(relative_path, project_root)
+}
+
+fn copy_retail_dat_to_project_editor_roots(
+    dat_context: &DatContext,
+    project_root: &Path,
+    relative_path: &str,
+) -> Result<PathBuf, AppError> {
+    copy_dat_to_output_root(
+        dat_context.ffxi_path.join(relative_path),
+        retail_base_root(project_root),
+    )?;
+    copy_retail_base_to_custom_if_missing(relative_path, project_root)
+}
+
+fn dat_is_staged_for_project_editor(project_root: &Path, relative_path: &str) -> bool {
+    retail_base_path(project_root, relative_path).is_file()
+        && custom_path(project_root, relative_path).is_file()
+}
+
 fn reset_data_menu_section_to_retail_base(
     relative_path: &str,
     project_root: &Path,
@@ -541,9 +570,11 @@ pub async fn copy_item_dats_to_project(
                 requested_lang,
                 &dat_context,
             )?;
-            let retail_path = dat_context.ffxi_path.join(&relative_path);
-            let copied_path =
-                copy_dat_to_output_root(retail_path, retail_base_root(&project_root))?;
+            let copied_path = copy_retail_dat_to_project_editor_roots(
+                &dat_context,
+                &project_root,
+                &relative_path,
+            )?;
             copied_paths.push(copied_path.display().to_string());
         }
     }
@@ -620,7 +651,7 @@ pub async fn are_all_item_dats_made_in_project(state: AppState<'_>) -> Result<bo
         for lang in langs {
             let relative_path =
                 resolve_descriptor_relative_path(descriptor_info.descriptor, lang, &dat_context)?;
-            if !retail_base_path(&project_root, &relative_path).is_file() {
+            if !dat_is_staged_for_project_editor(&project_root, &relative_path) {
                 return Ok(false);
             }
         }
@@ -653,10 +684,8 @@ pub async fn copy_zone_entity_dat_to_project(
         DatLanguage::English,
         &dat_context,
     )?;
-    let copied_path = copy_dat_to_output_root(
-        dat_context.ffxi_path.join(relative_path),
-        retail_base_root(&project_root),
-    )?;
+    let copied_path =
+        copy_retail_dat_to_project_editor_roots(&dat_context, &project_root, &relative_path)?;
 
     Ok(copied_path.display().to_string())
 }
@@ -715,7 +744,10 @@ pub async fn is_zone_entity_dat_made_in_project(
         &dat_context,
     )?;
 
-    Ok(retail_base_path(&project_root, &relative_path).is_file())
+    Ok(dat_is_staged_for_project_editor(
+        &project_root,
+        &relative_path,
+    ))
 }
 
 fn spell_editor_relative_paths(
@@ -975,19 +1007,18 @@ pub async fn copy_spell_dat_to_project(state: AppState<'_>) -> Result<String, Ap
     };
 
     let (data_menu_relative, text_relative_paths) = spell_editor_relative_paths(&dat_context)?;
-    let copied_path = copy_dat_to_output_root(
-        dat_context.ffxi_path.join(data_menu_relative),
-        retail_base_root(&project_root),
-    )?;
+    let copied_path =
+        copy_retail_dat_to_project_editor_roots(&dat_context, &project_root, &data_menu_relative)?;
     for relative_path in [
         text_relative_paths.spell_names_en,
         text_relative_paths.spell_names_jp,
         text_relative_paths.spell_descriptions_en,
         text_relative_paths.spell_descriptions_jp,
     ] {
-        copy_dat_to_output_root(
-            dat_context.ffxi_path.join(relative_path),
-            retail_base_root(&project_root),
+        copy_retail_dat_to_project_editor_roots(
+            &dat_context,
+            &project_root,
+            &relative_path.to_string_lossy(),
         )?;
     }
     Ok(copied_path.display().to_string())
@@ -1044,19 +1075,23 @@ pub async fn is_spell_dat_made_in_project(state: AppState<'_>) -> Result<bool, A
     };
     let (data_menu_relative, text_relative_paths) = spell_editor_relative_paths(&dat_context)?;
     Ok(
-        retail_base_path(&project_root, &data_menu_relative).is_file()
-            && retail_base_root(&project_root)
-                .join(text_relative_paths.spell_names_en)
-                .is_file()
-            && retail_base_root(&project_root)
-                .join(text_relative_paths.spell_names_jp)
-                .is_file()
-            && retail_base_root(&project_root)
-                .join(text_relative_paths.spell_descriptions_en)
-                .is_file()
-            && retail_base_root(&project_root)
-                .join(text_relative_paths.spell_descriptions_jp)
-                .is_file(),
+        dat_is_staged_for_project_editor(&project_root, &data_menu_relative)
+            && dat_is_staged_for_project_editor(
+                &project_root,
+                &text_relative_paths.spell_names_en.to_string_lossy(),
+            )
+            && dat_is_staged_for_project_editor(
+                &project_root,
+                &text_relative_paths.spell_names_jp.to_string_lossy(),
+            )
+            && dat_is_staged_for_project_editor(
+                &project_root,
+                &text_relative_paths.spell_descriptions_en.to_string_lossy(),
+            )
+            && dat_is_staged_for_project_editor(
+                &project_root,
+                &text_relative_paths.spell_descriptions_jp.to_string_lossy(),
+            ),
     )
 }
 
@@ -1077,19 +1112,18 @@ pub async fn copy_ability_dat_to_project(state: AppState<'_>) -> Result<String, 
     };
 
     let (data_menu_relative, text_relative_paths) = ability_editor_relative_paths(&dat_context)?;
-    let copied_path = copy_dat_to_output_root(
-        dat_context.ffxi_path.join(data_menu_relative),
-        retail_base_root(&project_root),
-    )?;
+    let copied_path =
+        copy_retail_dat_to_project_editor_roots(&dat_context, &project_root, &data_menu_relative)?;
     for relative_path in [
         text_relative_paths.ability_names_en,
         text_relative_paths.ability_names_jp,
         text_relative_paths.ability_descriptions_en,
         text_relative_paths.ability_descriptions_jp,
     ] {
-        copy_dat_to_output_root(
-            dat_context.ffxi_path.join(relative_path),
-            retail_base_root(&project_root),
+        copy_retail_dat_to_project_editor_roots(
+            &dat_context,
+            &project_root,
+            &relative_path.to_string_lossy(),
         )?;
     }
     Ok(copied_path.display().to_string())
@@ -1146,19 +1180,27 @@ pub async fn is_ability_dat_made_in_project(state: AppState<'_>) -> Result<bool,
     };
     let (data_menu_relative, text_relative_paths) = ability_editor_relative_paths(&dat_context)?;
     Ok(
-        retail_base_path(&project_root, &data_menu_relative).is_file()
-            && retail_base_root(&project_root)
-                .join(text_relative_paths.ability_names_en)
-                .is_file()
-            && retail_base_root(&project_root)
-                .join(text_relative_paths.ability_names_jp)
-                .is_file()
-            && retail_base_root(&project_root)
-                .join(text_relative_paths.ability_descriptions_en)
-                .is_file()
-            && retail_base_root(&project_root)
-                .join(text_relative_paths.ability_descriptions_jp)
-                .is_file(),
+        dat_is_staged_for_project_editor(&project_root, &data_menu_relative)
+            && dat_is_staged_for_project_editor(
+                &project_root,
+                &text_relative_paths.ability_names_en.to_string_lossy(),
+            )
+            && dat_is_staged_for_project_editor(
+                &project_root,
+                &text_relative_paths.ability_names_jp.to_string_lossy(),
+            )
+            && dat_is_staged_for_project_editor(
+                &project_root,
+                &text_relative_paths
+                    .ability_descriptions_en
+                    .to_string_lossy(),
+            )
+            && dat_is_staged_for_project_editor(
+                &project_root,
+                &text_relative_paths
+                    .ability_descriptions_jp
+                    .to_string_lossy(),
+            ),
     )
 }
 

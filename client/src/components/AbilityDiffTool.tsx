@@ -276,7 +276,7 @@ function abilityPathFromProjectRoot(projectRoot: string | null): string | null {
   }
 
   const normalizedRoot = projectRoot.replaceAll("\\", "/").replace(/\/+$/, "");
-  return `${normalizedRoot}/Retail Base/${ABILITY_RELATIVE_PATH}`;
+  return `${normalizedRoot}/Custom/${ABILITY_RELATIVE_PATH}`;
 }
 
 function loadCachedState(): AbilityEditorCachedState | null {
@@ -319,6 +319,7 @@ function AbilityDiffTool() {
   const [isLoading, setLoading] = createSignal(false);
   const [isSaving, setSaving] = createSignal(false);
   const [isMakingBaseDat, setMakingBaseDat] = createSignal(false);
+  const [isUpdatingBaseDat, setUpdatingBaseDat] = createSignal(false);
   const [isResettingToRetailBase, setResettingToRetailBase] = createSignal(false);
   const [prefillApplied, setPrefillApplied] = createSignal(false);
   const [rowsVersion, setRowsVersion] = createSignal(0);
@@ -540,6 +541,10 @@ function AbilityDiffTool() {
   };
 
   const preferredAbilityPath = createMemo(() => {
+    if (!abilityBaseDatMade()) {
+      return "";
+    }
+
     const abilityPathFromProject = abilityPathFromProjectRoot(getProjectFolder());
     if (abilityPathFromProject) {
       return abilityPathFromProject;
@@ -549,16 +554,17 @@ function AbilityDiffTool() {
   });
 
   const canLoadAbilityFile = createMemo(() =>
-    !!getProjectFolder() && !!abilityBaseDatMade() && pathIsWithinRoot(abilityPath(), getProjectFolder())
+    !!getProjectFolder() && !!abilityBaseDatMade() && pathIsWithinRoot(abilityPath(), getOutputRoot(getProjectFolder()))
   );
+  const abilityDisplayPath = createMemo(() => projectDisplayPath(abilityPath(), getProjectFolder()));
   const pathStatusText = createMemo(() => {
     if (!getProjectFolder()) {
       return "Set a Project Folder so Kraken can stage and save Ability DAT edits.";
     }
     if (!abilityBaseDatMade()) {
-      return "This editor only loads the Ability DAT from the Project Folder. Click Make Base Ability DAT first so Kraken never edits against retail files.";
+      return "Click Make Base Ability DAT to create a Retail Base snapshot and a Custom editor copy.";
     }
-    return "This editor loads and saves the Ability DAT from the Project Folder.";
+    return "This editor loads and saves the Custom Ability DAT. Retail Base is kept for reset and can be updated from FFXI Source.";
   });
 
   const setAbilityFile = (path: string) => {
@@ -617,7 +623,7 @@ function AbilityDiffTool() {
       return;
     }
     if (!abilityBaseDatMade()) {
-      await showMessage("Make the Base Ability DAT first. The Ability Editor loads from Retail Base or Custom so Kraken never edits your retail files.", {
+      await showMessage("Make the Base Ability DAT first. The Ability Editor loads and saves from Custom so Kraken never edits your retail files.", {
         title: "Base DAT Required",
         kind: "warning",
       });
@@ -627,8 +633,8 @@ function AbilityDiffTool() {
       await showMessage("Select the Ability DAT/YAML file first.", { title: "Load Blocked", kind: "warning" });
       return;
     }
-    if (!pathIsWithinRoot(abilityPath(), getProjectFolder())) {
-      await showMessage("The Ability Editor only loads Ability DATs from the Project Folder. Click Make Base Ability DAT first, then reload the Retail Base copy.", {
+    if (!pathIsWithinRoot(abilityPath(), getOutputRoot(getProjectFolder()))) {
+      await showMessage("The Ability Editor only loads Ability DATs from Custom. Click Make Base Ability DAT first, then use the Custom copy.", {
         title: "Project Copy Required",
         kind: "warning",
       });
@@ -684,9 +690,9 @@ function AbilityDiffTool() {
       await refetchabilityBaseDatMade();
       batch(() => {
         setAbilityFile(copiedPath);
-        setLastNotice("Copied Base Ability DAT into Retail Base.");
+        setLastNotice("Copied Base Ability DAT into Retail Base and Custom.");
       });
-      await showMessage(`Copied Base Ability DAT into Retail Base.\n${copiedPath}`, {
+      await showMessage(`Copied Base Ability DAT into Retail Base and Custom.\nCustom DAT: ${copiedPath}`, {
         title: "Base DAT Ready",
         kind: "info",
       });
@@ -694,6 +700,46 @@ function AbilityDiffTool() {
       await showMessage(`${err}`, { title: "Copy Error", kind: "error" });
     } finally {
       setMakingBaseDat(false);
+    }
+  };
+
+  const updateBaseAbilityDatFromSource = async () => {
+    if (!getProjectFolder()) {
+      await showMessage("Set a Project Folder first so Kraken knows where to update the Base Ability DAT.", {
+        title: "Project Folder Required",
+        kind: "warning",
+      });
+      return;
+    }
+    if (!abilityBaseDatMade()) {
+      await showMessage("Make the Base Ability DAT first before updating it from FFXI Source.", {
+        title: "Base DAT Required",
+        kind: "warning",
+      });
+      return;
+    }
+
+    setUpdatingBaseDat(true);
+    try {
+      const customPath = unwrap(await copyAbilityDatToProject());
+      await refetchabilityBaseDatMade();
+      batch(() => {
+        if (!abilityPath()) {
+          setAbilityPath(customPath);
+        }
+        setLastNotice("Updated Retail Base Ability DAT from FFXI Source. Custom Ability DAT was not overwritten.");
+      });
+      await showMessage(
+        `Updated Retail Base Ability DAT from FFXI Source.\nCustom DAT kept at: ${customPath}`,
+        {
+          title: "Base DAT Updated",
+          kind: "info",
+        },
+      );
+    } catch (err) {
+      await showMessage(`${err}`, { title: "Update Error", kind: "error" });
+    } finally {
+      setUpdatingBaseDat(false);
     }
   };
 
@@ -755,7 +801,7 @@ function AbilityDiffTool() {
     if (!preferred) {
       return;
     }
-    if (!abilityPath() || !pathIsWithinRoot(abilityPath(), getProjectFolder())) {
+    if (!abilityPath() || !pathIsWithinRoot(abilityPath(), getOutputRoot(getProjectFolder()))) {
       setAbilityPath(preferred);
     }
   });
@@ -1043,8 +1089,8 @@ function AbilityDiffTool() {
       await showMessage("Load the ability file first.", { title: "Save Blocked", kind: "warning" });
       return;
     }
-    if (!pathIsWithinRoot(abilityPath(), getProjectFolder())) {
-      await showMessage("The Ability Editor only saves from Project Folder copies. Click Make Base Ability DAT first, then reload the Retail Base copy.", {
+    if (!pathIsWithinRoot(abilityPath(), getOutputRoot(getProjectFolder()))) {
+      await showMessage("The Ability Editor only saves from Custom. Click Make Base Ability DAT first, then use the Custom copy.", {
         title: "Project Copy Required",
         kind: "warning",
       });
@@ -1119,21 +1165,30 @@ function AbilityDiffTool() {
             <div class="mt-1 text-[13px] text-amber-100">
               This editor uses a copied Ability DAT in the Project Folder so Kraken never edits your retail FFXI files directly.
             </div>
-            <div class="mt-3">
+            <div class="mt-3 flex flex-wrap items-center gap-2">
               <button
                 class={`${compactButtonClass()} ${abilityBaseDatMade() ? "opacity-60 cursor-not-allowed" : ""}`}
-                disabled={isLoading() || isSaving() || isMakingBaseDat() || !getProjectFolder() || !!abilityBaseDatMade()}
+                disabled={isLoading() || isSaving() || isMakingBaseDat() || isUpdatingBaseDat() || !getProjectFolder() || !!abilityBaseDatMade()}
                 onclick={makeBaseAbilityDat}
               >
                 {isMakingBaseDat() ? "Making Base Ability DAT..." : abilityBaseDatMade() ? "Base Ability DAT Made" : "Make Base Ability DAT"}
               </button>
+              <Show when={abilityBaseDatMade()}>
+                <button
+                  class={compactButtonClass()}
+                  disabled={isLoading() || isSaving() || isMakingBaseDat() || isUpdatingBaseDat() || !getProjectFolder()}
+                  onclick={updateBaseAbilityDatFromSource}
+                >
+                  {isUpdatingBaseDat() ? "Updating Base..." : "Update Base From FFXI Source"}
+                </button>
+              </Show>
             </div>
           </div>
 
           <div class="min-w-0 flex items-center gap-2">
-            <button class={compactButtonClass()} disabled={!getProjectFolder()} onclick={pickFile}>Ability DAT/YAML</button>
+            <button class={compactButtonClass()} disabled={!getProjectFolder()} onclick={pickFile}>Custom Ability DAT/YAML</button>
             <span class="font-mono text-xs truncate" title={abilityPath() || "Not selected"}>
-              {abilityPath() || "Not selected"}
+              {abilityDisplayPath() || "Not selected"}
             </span>
           </div>
 
@@ -1142,7 +1197,7 @@ function AbilityDiffTool() {
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
-            <button class={compactButtonClass()} disabled={isLoading() || isSaving() || isMakingBaseDat() || !canLoadAbilityFile()} onclick={loadAbilityData}>
+            <button class={compactButtonClass()} disabled={isLoading() || isSaving() || isMakingBaseDat() || isUpdatingBaseDat() || !canLoadAbilityFile()} onclick={loadAbilityData}>
               {isLoading() ? "Reloading..." : "Reload"}
             </button>
 
@@ -1210,7 +1265,7 @@ function AbilityDiffTool() {
                 <div class="flex flex-wrap justify-end gap-2">
                   <button
                     class={compactButtonClass()}
-                    disabled={isLoading() || isSaving() || isMakingBaseDat() || isResettingToRetailBase() || !abilityBaseDatMade()}
+                    disabled={isLoading() || isSaving() || isMakingBaseDat() || isUpdatingBaseDat() || isResettingToRetailBase() || !abilityBaseDatMade()}
                     onClick={() => {
                       void resetAbilityDatToRetailBaseCopy();
                     }}

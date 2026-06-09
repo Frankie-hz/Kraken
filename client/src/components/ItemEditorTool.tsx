@@ -639,6 +639,7 @@ function ItemEditorTool() {
   const [isSaving, setSaving] = createSignal(false);
   const [isResolvingDat, setResolvingDat] = createSignal(false);
   const [isMakingBaseDats, setMakingBaseDats] = createSignal(false);
+  const [isUpdatingBaseDats, setUpdatingBaseDats] = createSignal(false);
   const [isResettingToRetailBase, setResettingToRetailBase] = createSignal(false);
   const [rowsVersion, setRowsVersion] = createSignal(0);
 
@@ -672,9 +673,9 @@ function ItemEditorTool() {
       return "Set a Project Folder so Kraken can stage and save both EN and JP item DATs.";
     }
     if (!allBaseDatsMade()) {
-      return "This editor only loads item DATs from the Project Folder. Click Make all Base DATs first so Kraken never edits against retail files.";
+      return "Click Make all Base DATs to create Retail Base snapshots and Custom editor copies.";
     }
-    return "This editor loads item DATs only from the Project Folder as a paired EN/JP dataset and saves both outputs there.";
+    return "This editor loads and saves Custom item DATs as a paired EN/JP dataset. Retail Base is kept for reset and can be updated from FFXI Source.";
   });
 
   const displayedRows = createMemo(() => {
@@ -778,7 +779,7 @@ function ItemEditorTool() {
       return;
     }
     if (!allBaseDatsMade()) {
-      await showMessage("Make all Base DATs first. The Item Editor only loads DATs from the Project Folder so Kraken never edits your retail files.", {
+      await showMessage("Make all Base DATs first. The Item Editor loads and saves from Custom so Kraken never edits your retail files.", {
         title: "Base DATs Required",
         kind: "warning",
       });
@@ -826,9 +827,9 @@ function ItemEditorTool() {
       const copiedPaths = unwrap(await copyItemDatsToProject());
       await refetchAllBaseDatsMade();
       batch(() => {
-        setLastNotice(`Copied ${copiedPaths.length} base item DATs into Project Folder.`);
+        setLastNotice(`Copied ${copiedPaths.length} base item DATs into Retail Base and Custom.`);
       });
-      await showMessage(`Copied ${copiedPaths.length} base item DATs into Project Folder.`, {
+      await showMessage(`Copied ${copiedPaths.length} base item DATs into Retail Base and Custom.`, {
         title: "Base DATs Ready",
         kind: "info",
       });
@@ -836,6 +837,43 @@ function ItemEditorTool() {
       await showMessage(`${err}`, { title: "Copy Error", kind: "error" });
     } finally {
       setMakingBaseDats(false);
+    }
+  };
+
+  const updateAllBaseDatsFromSource = async () => {
+    if (!getProjectFolder()) {
+      await showMessage("Set a Project Folder first so Kraken knows where to update the base item DATs.", {
+        title: "Project Folder Required",
+        kind: "warning",
+      });
+      return;
+    }
+    if (!allBaseDatsMade()) {
+      await showMessage("Make all Base DATs first before updating them from FFXI Source.", {
+        title: "Base DATs Required",
+        kind: "warning",
+      });
+      return;
+    }
+
+    setUpdatingBaseDats(true);
+    try {
+      const copiedPaths = unwrap(await copyItemDatsToProject());
+      await refetchAllBaseDatsMade();
+      batch(() => {
+        setLastNotice(`Updated ${copiedPaths.length} base item DATs from FFXI Source. Custom item DATs were not overwritten.`);
+      });
+      await showMessage(
+        `Updated ${copiedPaths.length} base item DATs from FFXI Source.\nCustom item DATs were not overwritten.`,
+        {
+          title: "Base DATs Updated",
+          kind: "info",
+        },
+      );
+    } catch (err) {
+      await showMessage(`${err}`, { title: "Update Error", kind: "error" });
+    } finally {
+      setUpdatingBaseDats(false);
     }
   };
 
@@ -1556,14 +1594,23 @@ function ItemEditorTool() {
               <br />
               3. Edit anything you want. It will save both EN and JP together when you click <span class="font-semibold">Save EN + JP</span>, or you can save just one side if you prefer.
             </div>
-            <div class="mt-3">
+            <div class="mt-3 flex flex-wrap items-center gap-2">
               <button
                 class={`${compactButtonClass()} ${allBaseDatsMade() ? "opacity-60 cursor-not-allowed" : ""}`}
-                disabled={isLoading() || isResolvingDat() || isMakingBaseDats() || !getProjectFolder() || !!allBaseDatsMade()}
+                disabled={isLoading() || isResolvingDat() || isMakingBaseDats() || isUpdatingBaseDats() || !getProjectFolder() || !!allBaseDatsMade()}
                 onClick={makeAllBaseDats}
               >
                 {isMakingBaseDats() ? "Making base DATs..." : allBaseDatsMade() ? "All Dats Made" : "Make all Base DATs"}
               </button>
+              <Show when={allBaseDatsMade()}>
+                <button
+                  class={compactButtonClass()}
+                  disabled={isLoading() || isResolvingDat() || isMakingBaseDats() || isUpdatingBaseDats() || !getProjectFolder()}
+                  onClick={updateAllBaseDatsFromSource}
+                >
+                  {isUpdatingBaseDats() ? "Updating Base..." : "Update Base From FFXI Source"}
+                </button>
+              </Show>
             </div>
           </div>
           <div class="rounded-md border border-slate-700 bg-slate-950/40 px-3 py-2">
@@ -1580,7 +1627,7 @@ function ItemEditorTool() {
                   {(option) => (
                     <button
                       class={compactButtonClass(selectedDatType() === option.descriptor.type)}
-                      disabled={isResolvingDat()}
+                      disabled={isResolvingDat() || isUpdatingBaseDats()}
                       title={option.has_jp ? "Loads paired English and Japanese item text." : "Loads English-only item text."}
                       onClick={() => {
                         void chooseItemDat(option);
@@ -1617,7 +1664,7 @@ function ItemEditorTool() {
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
-            <button class={compactButtonClass()} disabled={isLoading() || isResolvingDat() || isMakingBaseDats() || !canLoadSelectedFile()} onClick={() => void loadItemData()}>
+            <button class={compactButtonClass()} disabled={isLoading() || isResolvingDat() || isMakingBaseDats() || isUpdatingBaseDats() || !canLoadSelectedFile()} onClick={() => void loadItemData()}>
               {isLoading() ? "Reloading..." : "Reload"}
             </button>
 
@@ -1631,7 +1678,7 @@ function ItemEditorTool() {
 
             <button
               class={compactButtonClass()}
-              disabled={isSaving() || isResolvingDat() || isMakingBaseDats() || rows.length === 0}
+              disabled={isSaving() || isResolvingDat() || isMakingBaseDats() || isUpdatingBaseDats() || rows.length === 0}
               onClick={() => {
                 void saveEdited("english");
               }}
@@ -1641,7 +1688,7 @@ function ItemEditorTool() {
 
             <button
               class={compactButtonClass()}
-              disabled={isSaving() || isResolvingDat() || isMakingBaseDats() || rows.length === 0 || !japaneseItemPath()}
+              disabled={isSaving() || isResolvingDat() || isMakingBaseDats() || isUpdatingBaseDats() || rows.length === 0 || !japaneseItemPath()}
               onClick={() => {
                 void saveEdited("japanese");
               }}
@@ -1651,7 +1698,7 @@ function ItemEditorTool() {
 
             <button
               class={compactButtonClass()}
-              disabled={isSaving() || isResolvingDat() || isMakingBaseDats() || rows.length === 0}
+              disabled={isSaving() || isResolvingDat() || isMakingBaseDats() || isUpdatingBaseDats() || rows.length === 0}
               onClick={() => {
                 void saveEdited("both");
               }}
@@ -1683,7 +1730,7 @@ function ItemEditorTool() {
                 <div class="flex flex-wrap justify-end gap-2">
                   <button
                     class={compactButtonClass()}
-                    disabled={isLoading() || isSaving() || isResolvingDat() || isMakingBaseDats() || isResettingToRetailBase() || !selectedDatDescriptor() || !allBaseDatsMade()}
+                    disabled={isLoading() || isSaving() || isResolvingDat() || isMakingBaseDats() || isUpdatingBaseDats() || isResettingToRetailBase() || !selectedDatDescriptor() || !allBaseDatsMade()}
                     onClick={() => {
                       void resetItemDatToRetailBase();
                     }}

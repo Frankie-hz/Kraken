@@ -104,6 +104,7 @@ function ZoneEditorTool() {
   const [isLoading, setLoading] = createSignal(false);
   const [isSaving, setSaving] = createSignal(false);
   const [isMakingBaseDat, setMakingBaseDat] = createSignal(false);
+  const [isUpdatingBaseDat, setUpdatingBaseDat] = createSignal(false);
   const [isResettingToRetailBase, setResettingToRetailBase] = createSignal(false);
 
   const filteredZones = createMemo(() => {
@@ -325,9 +326,9 @@ function ZoneEditorTool() {
     try {
       const copiedPath = unwrap(await copyZoneEntityDatToProject(zone.id));
       await refetchZoneBaseDatMade();
-      setLastNotice("Copied base Entity DAT into Retail Base.");
+      setLastNotice("Copied base Entity DAT into Retail Base and Custom.");
       await loadRows(zone);
-      await showMessage(`Copied base Entity DAT into Retail Base.\n${copiedPath}`, {
+      await showMessage(`Copied base Entity DAT into Retail Base and Custom.\nCustom DAT: ${copiedPath}`, {
         title: "Base DAT Ready",
         kind: "info",
       });
@@ -335,6 +336,46 @@ function ZoneEditorTool() {
       await showMessage(`${err}`, { title: "Copy Error", kind: "error" });
     } finally {
       setMakingBaseDat(false);
+    }
+  };
+
+  const updateBaseDatFromSource = async () => {
+    const zone = selectedZone();
+    if (!zone) {
+      await showMessage("Select a zone first.", { title: "Zone Required", kind: "warning" });
+      return;
+    }
+    if (!getProjectFolder()) {
+      await showMessage("Set a Project Folder first so Kraken knows where to update the Base Entity DAT.", {
+        title: "Project Folder Required",
+        kind: "warning",
+      });
+      return;
+    }
+    if (!zoneBaseDatMade()) {
+      await showMessage("Make the Base Entity DAT first before updating it from FFXI Source.", {
+        title: "Base DAT Required",
+        kind: "warning",
+      });
+      return;
+    }
+
+    setUpdatingBaseDat(true);
+    try {
+      const customPath = unwrap(await copyZoneEntityDatToProject(zone.id));
+      await refetchZoneBaseDatMade();
+      setLastNotice(`Updated Retail Base Entity DAT for ${zone.name} from FFXI Source. Custom Entity DAT was not overwritten.`);
+      await showMessage(
+        `Updated Retail Base Entity DAT for ${zone.name} from FFXI Source.\nCustom DAT kept at: ${customPath}`,
+        {
+          title: "Base DAT Updated",
+          kind: "info",
+        },
+      );
+    } catch (err) {
+      await showMessage(`${err}`, { title: "Update Error", kind: "error" });
+    } finally {
+      setUpdatingBaseDat(false);
     }
   };
 
@@ -494,23 +535,32 @@ function ZoneEditorTool() {
           <div class="rounded-md border border-amber-700/60 bg-amber-950/15 px-3 py-2">
             <div class="text-[13px] font-semibold uppercase tracking-[0.08em] text-amber-200">Direct Edit Workflow</div>
             <div class="mt-1 text-[13px] text-amber-100">
-              Select a zone, make its base Entity DAT, then edit ID and name rows from the Project Folder copy.
+              Select a zone, make its base Entity DAT, then edit ID and name rows from the Custom copy.
             </div>
-            <div class="mt-3">
-              <button class={compactButtonClass(zoneBaseDatMade())} disabled={!selectedZone() || isMakingBaseDat() || !getProjectFolder() || zoneBaseDatMade()} onClick={makeBaseDat}>
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+              <button class={compactButtonClass(zoneBaseDatMade())} disabled={!selectedZone() || isMakingBaseDat() || isUpdatingBaseDat() || !getProjectFolder() || zoneBaseDatMade()} onClick={makeBaseDat}>
                 {isMakingBaseDat() ? "Making Base..." : zoneBaseDatMade() ? "Base Entity DAT Made" : "Make Base Entity DAT"}
               </button>
+              <Show when={zoneBaseDatMade()}>
+                <button
+                  class={compactButtonClass()}
+                  disabled={!selectedZone() || isMakingBaseDat() || isUpdatingBaseDat() || !getProjectFolder()}
+                  onClick={updateBaseDatFromSource}
+                >
+                  {isUpdatingBaseDat() ? "Updating Base..." : "Update Base From FFXI Source"}
+                </button>
+              </Show>
             </div>
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
-            <button class={compactButtonClass()} disabled={!selectedZone() || isLoading() || !zoneBaseDatMade()} onClick={() => void loadRows()}>
+            <button class={compactButtonClass()} disabled={!selectedZone() || isLoading() || isUpdatingBaseDat() || !zoneBaseDatMade()} onClick={() => void loadRows()}>
               {isLoading() ? "Reloading..." : "Reload"}
             </button>
-            <button class={compactButtonClass()} disabled={isSaving() || rows.length === 0} onClick={saveRows}>
+            <button class={compactButtonClass()} disabled={isSaving() || isUpdatingBaseDat() || rows.length === 0} onClick={saveRows}>
               {isSaving() ? "Saving..." : "Save"}
             </button>
-            <button class={compactButtonClass()} disabled={isResettingToRetailBase() || !zoneBaseDatMade()} onClick={resetToRetailBase}>
+            <button class={compactButtonClass()} disabled={isUpdatingBaseDat() || isResettingToRetailBase() || !zoneBaseDatMade()} onClick={resetToRetailBase}>
               {isResettingToRetailBase() ? "Resetting..." : "Reset To Retail Base"}
             </button>
             <Show when={rows.length > 0}>

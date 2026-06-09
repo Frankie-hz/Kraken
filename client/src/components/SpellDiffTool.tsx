@@ -330,7 +330,7 @@ function spellPathFromProjectRoot(projectRoot: string | null): string | null {
   }
 
   const normalizedRoot = projectRoot.replaceAll("\\", "/").replace(/\/+$/, "");
-  return `${normalizedRoot}/Retail Base/${SPELL_RELATIVE_PATH}`;
+  return `${normalizedRoot}/Custom/${SPELL_RELATIVE_PATH}`;
 }
 
 function loadCachedState(): SpellEditorCachedState | null {
@@ -373,6 +373,7 @@ function SpellDiffTool() {
   const [isLoading, setLoading] = createSignal(false);
   const [isSaving, setSaving] = createSignal(false);
   const [isMakingBaseDat, setMakingBaseDat] = createSignal(false);
+  const [isUpdatingBaseDat, setUpdatingBaseDat] = createSignal(false);
   const [isResettingToRetailBase, setResettingToRetailBase] = createSignal(false);
   const [prefillApplied, setPrefillApplied] = createSignal(false);
   const [rowsVersion, setRowsVersion] = createSignal(0);
@@ -614,6 +615,10 @@ function SpellDiffTool() {
   };
 
   const preferredSpellPath = createMemo(() => {
+    if (!spellBaseDatMade()) {
+      return "";
+    }
+
     const spellPathFromProject = spellPathFromProjectRoot(getProjectFolder());
     if (spellPathFromProject) {
       return spellPathFromProject;
@@ -623,16 +628,17 @@ function SpellDiffTool() {
   });
 
   const canLoadSpellFile = createMemo(() =>
-    !!getProjectFolder() && !!spellBaseDatMade() && pathIsWithinRoot(spellPath(), getProjectFolder())
+    !!getProjectFolder() && !!spellBaseDatMade() && pathIsWithinRoot(spellPath(), getOutputRoot(getProjectFolder()))
   );
+  const spellDisplayPath = createMemo(() => projectDisplayPath(spellPath(), getProjectFolder()));
   const pathStatusText = createMemo(() => {
     if (!getProjectFolder()) {
       return "Set a Project Folder so Kraken can stage and save spell DAT edits.";
     }
     if (!spellBaseDatMade()) {
-      return "This editor only loads the spell DAT from the Project Folder. Click Make Base Spell DAT first so Kraken never edits against retail files.";
+      return "Click Make Base Spell DAT to create a Retail Base snapshot and a Custom editor copy.";
     }
-    return "This editor loads and saves the spell DAT from the Project Folder.";
+    return "This editor loads and saves the Custom spell DAT. Retail Base is kept for reset and can be updated from FFXI Source.";
   });
 
   const setSpellFile = (path: string) => {
@@ -691,7 +697,7 @@ function SpellDiffTool() {
       return;
     }
     if (!spellBaseDatMade()) {
-      await showMessage("Make the Base Spell DAT first. The Spell Editor loads from Retail Base or Custom so Kraken never edits your retail files.", {
+      await showMessage("Make the Base Spell DAT first. The Spell Editor loads and saves from Custom so Kraken never edits your retail files.", {
         title: "Base DAT Required",
         kind: "warning",
       });
@@ -701,8 +707,8 @@ function SpellDiffTool() {
       await showMessage("Select the spell DAT/YAML file first.", { title: "Load Blocked", kind: "warning" });
       return;
     }
-    if (!pathIsWithinRoot(spellPath(), getProjectFolder())) {
-      await showMessage("The Spell Editor only loads spell DATs from the Project Folder. Click Make Base Spell DAT first, then reload the Retail Base copy.", {
+    if (!pathIsWithinRoot(spellPath(), getOutputRoot(getProjectFolder()))) {
+      await showMessage("The Spell Editor only loads spell DATs from Custom. Click Make Base Spell DAT first, then use the Custom copy.", {
         title: "Project Copy Required",
         kind: "warning",
       });
@@ -764,9 +770,9 @@ function SpellDiffTool() {
       await refetchSpellBaseDatMade();
       batch(() => {
         setSpellFile(copiedPath);
-        setLastNotice("Copied base spell DAT into Retail Base.");
+        setLastNotice("Copied base spell DAT into Retail Base and Custom.");
       });
-      await showMessage(`Copied base spell DAT into Retail Base.\n${copiedPath}`, {
+      await showMessage(`Copied base spell DAT into Retail Base and Custom.\nCustom DAT: ${copiedPath}`, {
         title: "Base DAT Ready",
         kind: "info",
       });
@@ -774,6 +780,46 @@ function SpellDiffTool() {
       await showMessage(`${err}`, { title: "Copy Error", kind: "error" });
     } finally {
       setMakingBaseDat(false);
+    }
+  };
+
+  const updateBaseSpellDatFromSource = async () => {
+    if (!getProjectFolder()) {
+      await showMessage("Set a Project Folder first so Kraken knows where to update the Base Spell DAT.", {
+        title: "Project Folder Required",
+        kind: "warning",
+      });
+      return;
+    }
+    if (!spellBaseDatMade()) {
+      await showMessage("Make the Base Spell DAT first before updating it from FFXI Source.", {
+        title: "Base DAT Required",
+        kind: "warning",
+      });
+      return;
+    }
+
+    setUpdatingBaseDat(true);
+    try {
+      const customPath = unwrap(await copySpellDatToProject());
+      await refetchSpellBaseDatMade();
+      batch(() => {
+        if (!spellPath()) {
+          setSpellPath(customPath);
+        }
+        setLastNotice("Updated Retail Base spell DAT from FFXI Source. Custom spell DAT was not overwritten.");
+      });
+      await showMessage(
+        `Updated Retail Base spell DAT from FFXI Source.\nCustom DAT kept at: ${customPath}`,
+        {
+          title: "Base DAT Updated",
+          kind: "info",
+        },
+      );
+    } catch (err) {
+      await showMessage(`${err}`, { title: "Update Error", kind: "error" });
+    } finally {
+      setUpdatingBaseDat(false);
     }
   };
 
@@ -835,7 +881,7 @@ function SpellDiffTool() {
     if (!preferred) {
       return;
     }
-    if (!spellPath() || !pathIsWithinRoot(spellPath(), getProjectFolder())) {
+    if (!spellPath() || !pathIsWithinRoot(spellPath(), getOutputRoot(getProjectFolder()))) {
       setSpellPath(preferred);
     }
   });
@@ -1167,8 +1213,8 @@ function SpellDiffTool() {
       await showMessage("Load the spell file first.", { title: "Save Blocked", kind: "warning" });
       return;
     }
-    if (!pathIsWithinRoot(spellPath(), getProjectFolder())) {
-      await showMessage("The Spell Editor only saves from Project Folder copies. Click Make Base Spell DAT first, then reload the Retail Base copy.", {
+    if (!pathIsWithinRoot(spellPath(), getOutputRoot(getProjectFolder()))) {
+      await showMessage("The Spell Editor only saves from Custom. Click Make Base Spell DAT first, then use the Custom copy.", {
         title: "Project Copy Required",
         kind: "warning",
       });
@@ -1243,21 +1289,30 @@ function SpellDiffTool() {
             <div class="mt-1 text-[13px] text-amber-100">
               This editor uses a copied spell DAT in the Project Folder so Kraken never edits your retail FFXI files directly.
             </div>
-            <div class="mt-3">
+            <div class="mt-3 flex flex-wrap items-center gap-2">
               <button
                 class={`${compactButtonClass()} ${spellBaseDatMade() ? "opacity-60 cursor-not-allowed" : ""}`}
-                disabled={isLoading() || isSaving() || isMakingBaseDat() || !getProjectFolder() || !!spellBaseDatMade()}
+                disabled={isLoading() || isSaving() || isMakingBaseDat() || isUpdatingBaseDat() || !getProjectFolder() || !!spellBaseDatMade()}
                 onclick={makeBaseSpellDat}
               >
                 {isMakingBaseDat() ? "Making base spell DAT..." : spellBaseDatMade() ? "Base Spell DAT Made" : "Make Base Spell DAT"}
               </button>
+              <Show when={spellBaseDatMade()}>
+                <button
+                  class={compactButtonClass()}
+                  disabled={isLoading() || isSaving() || isMakingBaseDat() || isUpdatingBaseDat() || !getProjectFolder()}
+                  onclick={updateBaseSpellDatFromSource}
+                >
+                  {isUpdatingBaseDat() ? "Updating Base..." : "Update Base From FFXI Source"}
+                </button>
+              </Show>
             </div>
           </div>
 
           <div class="min-w-0 flex items-center gap-2">
-            <button class={compactButtonClass()} disabled={!getProjectFolder()} onclick={pickFile}>Spell DAT/YAML</button>
+            <button class={compactButtonClass()} disabled={!getProjectFolder()} onclick={pickFile}>Custom Spell DAT/YAML</button>
             <span class="font-mono text-xs truncate" title={spellPath() || "Not selected"}>
-              {spellPath() || "Not selected"}
+              {spellDisplayPath() || "Not selected"}
             </span>
           </div>
 
@@ -1266,7 +1321,7 @@ function SpellDiffTool() {
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
-            <button class={compactButtonClass()} disabled={isLoading() || isSaving() || isMakingBaseDat() || !canLoadSpellFile()} onclick={loadSpellData}>
+            <button class={compactButtonClass()} disabled={isLoading() || isSaving() || isMakingBaseDat() || isUpdatingBaseDat() || !canLoadSpellFile()} onclick={loadSpellData}>
               {isLoading() ? "Reloading..." : "Reload"}
             </button>
 
@@ -1338,7 +1393,7 @@ function SpellDiffTool() {
                 <div class="flex flex-wrap justify-end gap-2">
                   <button
                     class={compactButtonClass()}
-                    disabled={isLoading() || isSaving() || isMakingBaseDat() || isResettingToRetailBase() || !spellBaseDatMade()}
+                    disabled={isLoading() || isSaving() || isMakingBaseDat() || isUpdatingBaseDat() || isResettingToRetailBase() || !spellBaseDatMade()}
                     onClick={() => {
                       void resetSpellDatToRetailBaseCopy();
                     }}

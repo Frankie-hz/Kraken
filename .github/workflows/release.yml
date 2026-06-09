@@ -12,13 +12,13 @@ jobs:
         include:
           - os: ubuntu-22.04
             artifact_name: xi-tinkerer-cli
-            asset_name: xi-tinkerer-cli-linux-amd64
+            asset_name: kraken-cli-linux-amd64
           - os: windows-latest
             artifact_name: xi-tinkerer-cli.exe
-            asset_name: xi-tinkerer-cli.exe
+            asset_name: kraken-cli.exe
           - os: macos-latest
             artifact_name: xi-tinkerer-cli
-            asset_name: xi-tinkerer-cli-macos-amd64
+            asset_name: kraken-cli-macos-amd64
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -84,10 +84,10 @@ jobs:
           args: --config src-tauri/updater.conf.json
           projectPath: client
           distPath: client/dist
-          tagName: xi-tinkerer-v__VERSION__
-          releaseName: "XI Tinkerer v__VERSION__"
+          tagName: kraken-v__VERSION__
+          releaseName: "Kraken v__VERSION__"
           releaseBody: "See the assets to download this version and install."
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           updaterJsonPreferNsis: true
 

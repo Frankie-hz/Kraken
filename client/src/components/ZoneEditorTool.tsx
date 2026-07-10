@@ -34,6 +34,111 @@ function changedRowIndexesFor(rows: ZoneEditorRow[], originalRows: ZoneEditorRow
   return changed;
 }
 
+function duplicateIdsFor(rows: ZoneEditorRow[]) {
+  const counts = new Map<number, number>();
+  for (const row of rows) {
+    counts.set(row.id, (counts.get(row.id) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .filter(([, count]) => count > 1)
+    .map(([id]) => id);
+}
+
+function duplicateIdsSummary(ids: number[]) {
+  const visibleIds = ids.slice(0, 5).join(", ");
+  if (ids.length <= 5) {
+    return visibleIds;
+  }
+
+  return `${visibleIds}, +${ids.length - 5} more`;
+}
+
+type BulkEditorMode = "rows" | "ids" | "names";
+
+function rowsToBulkText(rows: ZoneEditorRow[], mode: BulkEditorMode) {
+  if (mode === "ids") {
+    return rows.map((row) => `${row.id}`).join("\n");
+  }
+  if (mode === "names") {
+    return rows.map((row) => row.name).join("\n");
+  }
+  return rows.map((row) => `${row.id}\t${row.name}`).join("\n");
+}
+
+function splitBulkTextRows(text: string) {
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const lines = normalized.split("\n");
+  if (lines[lines.length - 1] === "") {
+    lines.pop();
+  }
+  return lines;
+}
+
+function parseBulkEditorRowsText(text: string) {
+  const lines = splitBulkTextRows(text);
+  if (lines.length === 0) {
+    return { error: "Bulk table is empty." };
+  }
+
+  const parsedRows: ZoneEditorRow[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const tabIndex = line.indexOf("\t");
+    if (tabIndex < 0) {
+      return { error: `Line ${index + 1} needs an ID and name separated by a tab.` };
+    }
+
+    const idText = line.slice(0, tabIndex).trim();
+    const parsedId = Number.parseInt(idText, 10);
+    if (!Number.isInteger(parsedId) || parsedId < 0) {
+      return { error: `Line ${index + 1} has an invalid ID.` };
+    }
+
+    parsedRows.push({
+      id: parsedId,
+      name: line.slice(tabIndex + 1),
+    });
+  }
+
+  return { rows: parsedRows };
+}
+
+function parseBulkEditorIdsText(text: string) {
+  const lines = splitBulkTextRows(text);
+  if (lines.length === 0) {
+    return { error: "Bulk ID list is empty." };
+  }
+
+  const ids: number[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const parsedId = Number.parseInt(lines[index].trim(), 10);
+    if (!Number.isInteger(parsedId) || parsedId < 0) {
+      return { error: `Line ${index + 1} has an invalid ID.` };
+    }
+    ids.push(parsedId);
+  }
+
+  return { ids };
+}
+
+function parseBulkEditorNamesText(text: string, expectedRowCount: number) {
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const names = normalized.split("\n");
+  while (names.length > expectedRowCount && names[names.length - 1] === "") {
+    names.pop();
+  }
+
+  if (names.length === 0) {
+    return { error: "Bulk name list is empty." };
+  }
+  if (names.length !== expectedRowCount) {
+    return { error: `Bulk name list needs exactly ${expectedRowCount} line(s). It currently has ${names.length}.` };
+  }
+
+  return { names };
+}
+
 interface ZoneEditorDraft {
   rows: ZoneEditorRow[];
   originalRows: ZoneEditorRow[];
@@ -97,6 +202,9 @@ function ZoneEditorTool() {
   const [changedRowIndexes, setChangedRowIndexes] = createSignal<Set<number>>(new Set());
   const [zoneDrafts, setZoneDrafts] = createSignal<Map<number, ZoneEditorDraft>>(new Map());
   const [selectedRowIndex, setSelectedRowIndex] = createSignal<number | null>(null);
+  const [bulkEditorOpen, setBulkEditorOpen] = createSignal(false);
+  const [bulkEditorMode, setBulkEditorMode] = createSignal<BulkEditorMode>("rows");
+  const [bulkEditorText, setBulkEditorText] = createSignal("");
   const [sourcePath, setSourcePath] = createSignal("");
   const [outputYamlPath, setOutputYamlPath] = createSignal("");
   const [outputDatPath, setOutputDatPath] = createSignal("");
@@ -106,6 +214,7 @@ function ZoneEditorTool() {
   const [isMakingBaseDat, setMakingBaseDat] = createSignal(false);
   const [isUpdatingBaseDat, setUpdatingBaseDat] = createSignal(false);
   const [isResettingToRetailBase, setResettingToRetailBase] = createSignal(false);
+  let bulkNameIdsRef: HTMLTextAreaElement | undefined;
 
   const filteredZones = createMemo(() => {
     const filter = zoneFilterText().trim().toLowerCase();
@@ -131,8 +240,13 @@ function ZoneEditorTool() {
   });
 
   const changedCount = createMemo(() => changedRowIndexes().size);
+  const duplicateIds = createMemo(() => duplicateIdsFor(rows));
+  const duplicateIdSummary = createMemo(() => duplicateIdsSummary(duplicateIds()));
   const idChanged = (index: number, id: number) => originalRows()[index]?.id !== id;
   const nameChanged = (index: number, name: string) => originalRows()[index]?.name !== name;
+  const bulkNameIdsText = createMemo(() => {
+    return rows.map((row) => `${row.id}`).join("\n");
+  });
 
   const selectedZoneTitle = createMemo(() => {
     const zone = selectedZone();
@@ -147,12 +261,32 @@ function ZoneEditorTool() {
 
   const cloneRows = (sourceRows: ZoneEditorRow[]) => sourceRows.map((row) => ({ ...row }));
 
+  const setAllRows = (
+    nextRows: ZoneEditorRow[],
+    options: { selectedRowIndex?: number | null; notice?: string; syncBulkEditor?: boolean } = {},
+  ) => {
+    batch(() => {
+      setRows(() => nextRows);
+      setChangedRowIndexes(changedRowIndexesFor(nextRows, originalRows()));
+      if ("selectedRowIndex" in options) {
+        setSelectedRowIndex(options.selectedRowIndex ?? null);
+      }
+      if (options.notice !== undefined) {
+        setLastNotice(options.notice);
+      }
+      if (options.syncBulkEditor !== false && bulkEditorOpen()) {
+        setBulkEditorText(rowsToBulkText(nextRows, bulkEditorMode()));
+      }
+    });
+  };
+
   const applyDraft = (draft: ZoneEditorDraft) => {
     batch(() => {
       setRows(() => cloneRows(draft.rows));
       setOriginalRows(cloneRows(draft.originalRows));
       setChangedRowIndexes(new Set(draft.changedRowIndexes));
       setSelectedRowIndex(draft.selectedRowIndex);
+      setBulkEditorText(rowsToBulkText(draft.rows, bulkEditorMode()));
       setSourcePath(draft.sourcePath);
       setOutputYamlPath(draft.outputYamlPath);
       setOutputDatPath(draft.outputDatPath);
@@ -208,6 +342,7 @@ function ZoneEditorTool() {
       setOutputDatPath("");
       setLastNotice("");
       setRowFilterText("");
+      setBulkEditorText("");
     });
   };
 
@@ -244,6 +379,7 @@ function ZoneEditorTool() {
         setOriginalRows(cloneRows(result.rows));
         setChangedRowIndexes(new Set());
         setSelectedRowIndex(result.rows.length > 0 ? 0 : null);
+        setBulkEditorText(rowsToBulkText(result.rows, bulkEditorMode()));
         setSourcePath(result.source_path);
         setOutputYamlPath(result.output_yaml_path);
         setOutputDatPath(result.output_dat_path);
@@ -424,32 +560,106 @@ function ZoneEditorTool() {
       return;
     }
     const nextRow = { ...rows[index], id: parsed };
-    setRows(index, "id", parsed);
-    setChangedRowIndexes((current) => {
-      const next = new Set(current);
-      const originalRow = originalRows()[index];
-      if (!originalRow || rowSignature(nextRow) !== rowSignature(originalRow)) {
-        next.add(index);
-      } else {
-        next.delete(index);
-      }
-      return next;
-    });
+    const nextRows = cloneRows(rows);
+    nextRows[index] = nextRow;
+    setAllRows(nextRows);
   };
 
   const setRowName = (index: number, name: string) => {
     const nextRow = { ...rows[index], name };
-    setRows(index, "name", name);
-    setChangedRowIndexes((current) => {
-      const next = new Set(current);
-      const originalRow = originalRows()[index];
-      if (!originalRow || rowSignature(nextRow) !== rowSignature(originalRow)) {
-        next.add(index);
-      } else {
-        next.delete(index);
+    const nextRows = cloneRows(rows);
+    nextRows[index] = nextRow;
+    setAllRows(nextRows);
+  };
+
+  const applyNamePaste = (startIndex: number, text: string) => {
+    const lines = splitBulkTextRows(text);
+    if (lines.length === 0 || (lines.length === 1 && !text.includes("\t"))) {
+      return false;
+    }
+
+    const next = cloneRows(rows);
+    let applied = 0;
+    for (const line of lines) {
+      const targetIndex = startIndex + applied;
+      if (targetIndex >= next.length) {
+        break;
       }
-      return next;
+
+      const cells = line.split("\t");
+      next[targetIndex] = {
+        ...next[targetIndex],
+        name: cells[cells.length - 1] ?? "",
+      };
+      applied += 1;
+    }
+
+    if (applied === 0) {
+      return false;
+    }
+
+    setAllRows(next, {
+      selectedRowIndex: startIndex + applied - 1,
+      notice: `Pasted ${applied} name row(s).`,
     });
+    return true;
+  };
+
+  const applyRowPaste = (startIndex: number, text: string) => {
+    const lines = splitBulkTextRows(text);
+    if (lines.length === 0 || !text.includes("\t")) {
+      return false;
+    }
+
+    const parsedRows: ZoneEditorRow[] = [];
+    for (const line of lines) {
+      const tabIndex = line.indexOf("\t");
+      const parsedId = Number.parseInt(line.slice(0, tabIndex).trim(), 10);
+      if (!Number.isInteger(parsedId) || parsedId < 0) {
+        return false;
+      }
+
+      parsedRows.push({
+        id: parsedId,
+        name: line.slice(tabIndex + 1),
+      });
+    }
+
+    const next = cloneRows(rows);
+    let applied = 0;
+    for (const row of parsedRows) {
+      const targetIndex = startIndex + applied;
+      if (targetIndex >= next.length) {
+        break;
+      }
+
+      next[targetIndex] = row;
+      applied += 1;
+    }
+
+    if (applied === 0) {
+      return false;
+    }
+
+    setAllRows(next, {
+      selectedRowIndex: startIndex + applied - 1,
+      notice: `Pasted ${applied} table row(s).`,
+    });
+    return true;
+  };
+
+  const handleNamePaste = (index: number, event: ClipboardEvent) => {
+    const text = event.clipboardData?.getData("text/plain") ?? "";
+    if (applyNamePaste(index, text)) {
+      event.preventDefault();
+    }
+  };
+
+  const handleIdPaste = (index: number, event: ClipboardEvent) => {
+    const text = event.clipboardData?.getData("text/plain") ?? "";
+    if (applyRowPaste(index, text)) {
+      event.preventDefault();
+    }
   };
 
   const insertRowAt = (index: number) => {
@@ -458,10 +668,10 @@ function ZoneEditorTool() {
     const nextId = rows[index]?.id;
     const insertedId = previousId !== undefined ? previousId + 1 : nextId ?? 0;
     next.splice(index, 0, { id: insertedId, name: "" });
-    setRows(() => next);
-    setChangedRowIndexes(changedRowIndexesFor(next, originalRows()));
-    setSelectedRowIndex(index);
-    setLastNotice("Inserted a blank entity row.");
+    setAllRows(next, {
+      selectedRowIndex: index,
+      notice: "Inserted a blank entity row.",
+    });
   };
 
   const moveRow = (index: number, direction: -1 | 1) => {
@@ -473,10 +683,99 @@ function ZoneEditorTool() {
     const next = [...rows];
     const [row] = next.splice(index, 1);
     next.splice(targetIndex, 0, row);
-    setRows(() => next);
-    setChangedRowIndexes(changedRowIndexesFor(next, originalRows()));
-    setSelectedRowIndex(targetIndex);
-    setLastNotice("Moved row.");
+    setAllRows(next, {
+      selectedRowIndex: targetIndex,
+      notice: "Moved row.",
+    });
+  };
+
+  const toggleBulkEditor = () => {
+    const nextOpen = !bulkEditorOpen();
+    setBulkEditorOpen(nextOpen);
+    if (nextOpen) {
+      setBulkEditorText(rowsToBulkText(rows, bulkEditorMode()));
+    }
+  };
+
+  const refreshBulkEditorFromRows = () => {
+    setBulkEditorText(rowsToBulkText(rows, bulkEditorMode()));
+    setLastNotice("Bulk table text refreshed.");
+  };
+
+  const selectBulkEditorMode = (mode: BulkEditorMode) => {
+    setBulkEditorMode(mode);
+    setBulkEditorText(rowsToBulkText(rows, mode));
+  };
+
+  const applyBulkEditorRows = async () => {
+    const mode = bulkEditorMode();
+    if (mode === "rows") {
+      const result = parseBulkEditorRowsText(bulkEditorText());
+      if ("error" in result) {
+        await showMessage(result.error, { title: "Bulk Edit Error", kind: "error" });
+        return;
+      }
+
+      const selectedIndex = result.rows.length > 0
+        ? Math.min(selectedRowIndex() ?? 0, result.rows.length - 1)
+        : null;
+      setAllRows(result.rows, {
+        selectedRowIndex: selectedIndex,
+        notice: `Applied ${result.rows.length} bulk row(s).`,
+        syncBulkEditor: false,
+      });
+      setBulkEditorText(rowsToBulkText(result.rows, mode));
+      return;
+    }
+
+    if (mode === "ids") {
+      const result = parseBulkEditorIdsText(bulkEditorText());
+      if ("error" in result) {
+        await showMessage(result.error, { title: "Bulk Edit Error", kind: "error" });
+        return;
+      }
+      if (result.ids.length > rows.length) {
+        await showMessage("Bulk ID list has more lines than the loaded table.", { title: "Bulk Edit Error", kind: "error" });
+        return;
+      }
+
+      const startIndex = result.ids.length === rows.length ? 0 : selectedRowIndex() ?? 0;
+      if (startIndex + result.ids.length > rows.length) {
+        await showMessage("Bulk ID list does not fit from the selected row.", { title: "Bulk Edit Error", kind: "error" });
+        return;
+      }
+
+      const nextRows = cloneRows(rows);
+      result.ids.forEach((id, offset) => {
+        nextRows[startIndex + offset].id = id;
+      });
+
+      setAllRows(nextRows, {
+        selectedRowIndex: startIndex + result.ids.length - 1,
+        notice: `Applied ${result.ids.length} bulk ID row(s).`,
+        syncBulkEditor: false,
+      });
+      setBulkEditorText(rowsToBulkText(nextRows, mode));
+      return;
+    }
+
+    const result = parseBulkEditorNamesText(bulkEditorText(), rows.length);
+    if ("error" in result) {
+      await showMessage(result.error, { title: "Bulk Edit Error", kind: "error" });
+      return;
+    }
+
+    const nextRows = cloneRows(rows);
+    result.names.forEach((name, index) => {
+      nextRows[index].name = name;
+    });
+
+    setAllRows(nextRows, {
+      selectedRowIndex: selectedRowIndex(),
+      notice: `Applied ${result.names.length} bulk name row(s).`,
+      syncBulkEditor: false,
+    });
+    setBulkEditorText(rowsToBulkText(nextRows, mode));
   };
 
   const saveRows = async () => {
@@ -494,6 +793,10 @@ function ZoneEditorTool() {
     try {
       const payloadRows = rows.map((row) => ({ ...row }));
       const result = unwrap(await saveZoneEditorData(zone.id, payloadRows));
+      const savedDuplicateIds = duplicateIds();
+      const duplicateNotice = savedDuplicateIds.length > 0
+        ? `\nDuplicate IDs preserved: ${duplicateIdsSummary(savedDuplicateIds)}`
+        : "";
       batch(() => {
         setOriginalRows(cloneRows(payloadRows));
         setChangedRowIndexes(new Set());
@@ -505,9 +808,12 @@ function ZoneEditorTool() {
         setSourcePath(result.out_dat_path);
         setOutputYamlPath(result.out_yaml_path);
         setOutputDatPath(result.out_dat_path);
-        setLastNotice(`Saved ${result.written_count} entity rows.`);
+        setBulkEditorText(rowsToBulkText(payloadRows, bulkEditorMode()));
+        setLastNotice(savedDuplicateIds.length > 0
+          ? `Saved ${result.written_count} entity rows with duplicate IDs preserved.`
+          : `Saved ${result.written_count} entity rows.`);
       });
-      await showMessage(`Saved Entity DAT.\nYAML: ${result.out_yaml_path}\nDAT: ${result.out_dat_path}`, {
+      await showMessage(`Saved Entity DAT.${duplicateNotice}\nYAML: ${result.out_yaml_path}\nDAT: ${result.out_dat_path}`, {
         title: "Save Complete",
         kind: "info",
       });
@@ -558,13 +864,18 @@ function ZoneEditorTool() {
               {isLoading() ? "Reloading..." : "Reload"}
             </button>
             <button class={compactButtonClass()} disabled={isSaving() || isUpdatingBaseDat() || rows.length === 0} onClick={saveRows}>
-              {isSaving() ? "Saving..." : "Save"}
+              {isSaving() ? "Saving..." : duplicateIds().length > 0 ? "Save With Duplicate IDs" : "Save"}
             </button>
             <button class={compactButtonClass()} disabled={isUpdatingBaseDat() || isResettingToRetailBase() || !zoneBaseDatMade()} onClick={resetToRetailBase}>
               {isResettingToRetailBase() ? "Resetting..." : "Reset To Retail Base"}
             </button>
             <Show when={rows.length > 0}>
               <span class="text-xs text-slate-300">Edited: {changedCount()}</span>
+            </Show>
+            <Show when={duplicateIds().length > 0}>
+              <span class="text-xs text-amber-200" title={`Duplicate IDs preserved on save: ${duplicateIds().join(", ")}`}>
+                Duplicate IDs: {duplicateIdSummary()}
+              </span>
             </Show>
             <Show when={editedZoneCount() > 0}>
               <span class="text-xs text-slate-300">Draft zones: {editedZoneCount()}</span>
@@ -663,9 +974,88 @@ function ZoneEditorTool() {
               >
                 <span class="inline-flex items-center gap-2"><HiSolidArrowDown /> Move Down</span>
               </button>
+              <button class={compactButtonClass(bulkEditorOpen())} disabled={rows.length === 0} onClick={toggleBulkEditor}>
+                {bulkEditorOpen() ? "Hide Bulk Edit" : "Bulk Edit"}
+              </button>
             </div>
 
             <Show when={rows.length > 0} fallback={<div class="loading-state">Select a zone to edit its entity names.</div>}>
+              <Show when={bulkEditorOpen()}>
+                <div class="rounded-md border border-slate-700 bg-slate-900/30 p-2">
+                  <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <div class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-200">Bulk Table</div>
+                    <div class="flex flex-wrap items-center gap-2">
+                      <div class="flex overflow-hidden rounded-md border border-slate-600">
+                        <button
+                          class={`${compactButtonClass(bulkEditorMode() === "rows")} rounded-none border-0`}
+                          onClick={() => selectBulkEditorMode("rows")}
+                        >
+                          Rows
+                        </button>
+                        <button
+                          class={`${compactButtonClass(bulkEditorMode() === "ids")} rounded-none border-0 border-l border-slate-600`}
+                          onClick={() => selectBulkEditorMode("ids")}
+                        >
+                          IDs
+                        </button>
+                        <button
+                          class={`${compactButtonClass(bulkEditorMode() === "names")} rounded-none border-0 border-l border-slate-600`}
+                          onClick={() => selectBulkEditorMode("names")}
+                        >
+                          Names
+                        </button>
+                      </div>
+                      <button class={compactButtonClass()} onClick={refreshBulkEditorFromRows}>
+                        Refresh
+                      </button>
+                      <button class={compactButtonClass()} onClick={() => void applyBulkEditorRows()}>
+                        Apply
+                      </button>
+                    </div>
+                  </div>
+                  <Show
+                    when={bulkEditorMode() === "names"}
+                    fallback={
+                      <textarea
+                        class="m-0 min-h-64 w-full resize-y rounded-md border border-slate-500 bg-slate-800 px-2 py-1 font-mono text-xs leading-5 text-slate-100 focus:border-slate-300 focus:outline-none"
+                        autocomplete="off"
+                        spellcheck={false}
+                        wrap="off"
+                        value={bulkEditorText()}
+                        onInput={(event) => setBulkEditorText(event.currentTarget.value)}
+                      />
+                    }
+                  >
+                    <div class="grid min-h-64 grid-cols-[6rem_minmax(0,1fr)] gap-2">
+                      <textarea
+                        class="m-0 h-64 resize-none overflow-hidden rounded-md border border-slate-700 bg-slate-900 px-2 py-1 font-mono text-xs leading-5 text-slate-300 focus:border-slate-700 focus:outline-none"
+                        autocomplete="off"
+                        spellcheck={false}
+                        readOnly
+                        tabIndex={-1}
+                        wrap="off"
+                        value={bulkNameIdsText()}
+                        ref={(el) => {
+                          bulkNameIdsRef = el;
+                        }}
+                      />
+                      <textarea
+                        class="m-0 h-64 w-full resize-none rounded-md border border-slate-500 bg-slate-800 px-2 py-1 font-mono text-xs leading-5 text-slate-100 focus:border-slate-300 focus:outline-none"
+                        autocomplete="off"
+                        spellcheck={false}
+                        wrap="off"
+                        value={bulkEditorText()}
+                        onInput={(event) => setBulkEditorText(event.currentTarget.value)}
+                        onScroll={(event) => {
+                          if (bulkNameIdsRef) {
+                            bulkNameIdsRef.scrollTop = event.currentTarget.scrollTop;
+                          }
+                        }}
+                      />
+                    </div>
+                  </Show>
+                </div>
+              </Show>
               <div class="max-h-[70vh] overflow-y-auto overflow-x-hidden border border-slate-700 rounded-md">
               <table class="table-auto">
                 <thead>
@@ -689,6 +1079,7 @@ function ZoneEditorTool() {
                             step={1}
                             value={row.id}
                             onInput={(event) => setRowId(index, event.currentTarget.value)}
+                            onPaste={(event) => handleIdPaste(index, event)}
                           />
                         </td>
                         <td>
@@ -696,6 +1087,7 @@ function ZoneEditorTool() {
                             class={`py-1 px-2 ${editedFieldClass(nameChanged(index, row.name))}`}
                             value={row.name}
                             onInput={(event) => setRowName(index, event.currentTarget.value)}
+                            onPaste={(event) => handleNamePaste(index, event)}
                           />
                         </td>
                       </tr>

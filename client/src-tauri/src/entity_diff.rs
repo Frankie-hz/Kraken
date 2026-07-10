@@ -591,13 +591,6 @@ pub fn save_zone_editor_rows(
     out_yaml_path: PathBuf,
     out_dat_path: PathBuf,
 ) -> Result<usize> {
-    let mut seen_ids = BTreeSet::new();
-    for row in &rows {
-        if !seen_ids.insert(row.id) {
-            anyhow::bail!("Zone ID {} appears more than once.", row.id);
-        }
-    }
-
     let merged = EntityNamesYaml {
         names: rows
             .iter()

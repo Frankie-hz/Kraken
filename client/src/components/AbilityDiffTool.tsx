@@ -106,12 +106,14 @@ function estimateWrappedLines(text: string | null | undefined, charsPerLine: num
 }
 
 const VALID_TARGET_OPTIONS = [
+  "None",
   "SelfTarget",
   "Player",
   "PartyMember",
   "Ally",
   "NPC",
   "Enemy",
+  "Unknown",
   "Object",
   "Corpse",
   "CorpseOnly",
@@ -172,6 +174,18 @@ function validTargetOptionsForValues(...lists: Array<string[] | null | undefined
 
 function validTargetLabel(target: string) {
   return VALID_TARGET_LABELS[target] ?? target;
+}
+
+function nextValidTargets(currentValues: string[], target: string, enabled: boolean) {
+  if (target === "None") {
+    return enabled ? ["None"] : [];
+  }
+
+  if (enabled) {
+    return [...currentValues.filter((value) => value !== "None"), target];
+  }
+
+  return currentValues.filter((value) => value !== target);
 }
 
 function pickerDefaultPath(currentPath: string, fallbackPath: string) {
@@ -1015,10 +1029,7 @@ function AbilityDiffTool() {
 
   const toggleRowNewValidTarget = (row: AbilityDiffRow, target: string, enabled: boolean) => {
     const currentValues = normalizeStringList(row.new_valid_targets ?? row.old_valid_targets);
-    const nextValues = enabled
-      ? [...currentValues, target]
-      : currentValues.filter((value) => value !== target);
-    setRowNewValidTargets(row.row, nextValues);
+    setRowNewValidTargets(row.row, nextValidTargets(currentValues, target, enabled));
   };
 
   const descriptionDraftValue = (row: AbilityDiffRow, key: "new_description_en" | "new_description_jp") => {

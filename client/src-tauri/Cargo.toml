@@ -1,6 +1,6 @@
 [package]
 name = "kraken"
-version = "1.0.0"
+version = "1.0.1"
 description = "Kraken"
 authors = ["InoUno"]
 license = "AGPL-3.0"

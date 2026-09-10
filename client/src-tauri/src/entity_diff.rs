@@ -12,7 +12,8 @@ use dats::{
     dat_format::DatFormat,
     formats::{
         dmsg_list::DmsgContent, dmsg_table::DmsgTable, entity_names::EntityNames,
-        item_info::ItemInfoTable, menu_table::MenuTable,
+        item_info::{ItemInfoLayout, ItemInfoTable},
+        menu_table::MenuTable,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -32,6 +33,8 @@ struct EntityNameYaml {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ItemInfoTableYaml {
+    #[serde(default)]
+    layout: ItemInfoLayout,
     items: Vec<Value>,
 }
 
@@ -1043,6 +1046,7 @@ pub fn save_item_diff(
 
     let (out_yaml_path_string, written_dat) = if save_english {
         let merged = ItemInfoTableYaml {
+            layout: new_data.layout,
             items: merged_items.clone(),
         };
 
@@ -1082,6 +1086,10 @@ pub fn save_item_diff(
             ));
         };
         let merged_japanese = ItemInfoTableYaml {
+            layout: new_japanese_data
+                .as_ref()
+                .map(|data| data.layout)
+                .unwrap_or(new_data.layout),
             items: merged_japanese_items,
         };
         if let Some(parent) = japanese_out_yaml_path.parent() {

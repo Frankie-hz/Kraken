@@ -1,4 +1,5 @@
 mod analyze_meshes;
+mod convert_item_layout;
 mod entity_names_merge;
 mod export_dat;
 mod export_ximesh;
@@ -9,6 +10,7 @@ mod util;
 use std::path::PathBuf;
 
 use analyze_meshes::analyze_zone_meshes;
+use convert_item_layout::{ItemLayoutArg, convert_item_layout};
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
@@ -71,6 +73,17 @@ enum Commands {
         out_path: Option<PathBuf>,
     },
 
+    ConvertItemLayout {
+        #[arg(value_name = "INPUT_DAT_OR_DIR")]
+        input: PathBuf,
+
+        #[arg(short, long, value_name = "OUTPUT_DAT_OR_DIR")]
+        out: Option<PathBuf>,
+
+        #[arg(long, value_enum, default_value_t = ItemLayoutArg::Extended)]
+        layout: ItemLayoutArg,
+    },
+
     MigrateEntityNames {
         #[arg(value_name = "EDITED_YAML_OR_DAT")]
         edited_yaml: PathBuf,
@@ -124,6 +137,9 @@ async fn main() -> Result<()> {
             out_path,
         } => {
             export_dat(ffxi_path, dat_path, dat_id.map(DatId::from), out_path)?;
+        }
+        Commands::ConvertItemLayout { input, out, layout } => {
+            convert_item_layout(input, out, layout)?;
         }
         Commands::MigrateEntityNames {
             edited_yaml,
